@@ -1,0 +1,37 @@
+{
+  "name": "approved-tube-kids",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A cross-platform approved-channel YouTube viewer for kids.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "vite build",
+    "start": "electron .",
+    "package:linux": "electron-builder --linux AppImage deb",
+    "package:windows": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "concurrently": "latest",
+    "wait-on": "latest"
+  },
+  "devDependencies": {},
+  "build": {
+    "appId": "local.approved-tube-kids.app",
+    "productName": "Approved Tube Kids",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  }
+}
