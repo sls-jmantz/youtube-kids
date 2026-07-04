@@ -34,11 +34,12 @@ npm run dev
 ## Package
 
 ```bash
+npm run icons
 npm run package:linux
 npm run package:windows
 ```
 
-Windows packaging is best run from Windows or a CI runner configured for Windows builds.
+The app includes generated PNG/ICO icon assets under `build/`. Windows packaging is best run from Windows.
 
 ## Approving Channels
 

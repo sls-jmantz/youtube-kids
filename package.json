@@ -3,35 +3,60 @@
   "version": "0.1.0",
   "private": true,
   "description": "A cross-platform approved-channel YouTube viewer for kids.",
+  "author": "sls-jmantz",
+  "license": "UNLICENSED",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "icons": "node scripts/generate-icons.cjs",
     "build": "vite build",
     "start": "electron .",
     "package:linux": "electron-builder --linux AppImage deb",
     "package:windows": "electron-builder --win nsis"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
     "react": "latest",
-    "react-dom": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
     "electron": "latest",
     "electron-builder": "latest",
-    "concurrently": "latest",
+    "vite": "latest",
     "wait-on": "latest"
   },
-  "devDependencies": {},
   "build": {
     "appId": "local.approved-tube-kids.app",
     "productName": "Approved Tube Kids",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "copyright": "Copyright (c) 2026 sls-jmantz",
+    "icon": "build/icon",
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "build/icon.*",
       "package.json"
     ],
     "directories": {
       "output": "release"
+    },
+    "linux": {
+      "category": "Education",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
