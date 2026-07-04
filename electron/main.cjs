@@ -4,18 +4,21 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const isDev = !app.isPackaged;
-const settingsSchemaVersion = 4;
+const settingsSchemaVersion = 5;
 
 const defaultSettings = {
   schemaVersion: settingsSchemaVersion,
   approvedChannels: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
+  favoriteVideoDetails: {},
+  favoriteVideos: [],
   hiddenVideoDetails: {},
   hiddenVideos: [],
   language: 'en',
   pinHash: '',
   pinSalt: '',
+  recentlyWatched: [],
   region: 'US',
   youtubeApiKey: '',
 };
@@ -171,8 +174,17 @@ function migrateSettings(rawSettings = {}) {
   settings.hiddenVideos = Array.isArray(settings.hiddenVideos)
     ? [...new Set(settings.hiddenVideos.map((id) => String(id).trim()).filter(Boolean))]
     : [];
+  settings.favoriteVideos = Array.isArray(settings.favoriteVideos)
+    ? [...new Set(settings.favoriteVideos.map((id) => String(id).trim()).filter(Boolean))]
+    : [];
+  settings.recentlyWatched = Array.isArray(settings.recentlyWatched)
+    ? settings.recentlyWatched.filter((video) => video && typeof video === 'object' && typeof video.id === 'string').slice(0, 50)
+    : [];
   settings.hiddenVideoDetails = settings.hiddenVideoDetails && typeof settings.hiddenVideoDetails === 'object' && !Array.isArray(settings.hiddenVideoDetails)
     ? settings.hiddenVideoDetails
+    : {};
+  settings.favoriteVideoDetails = settings.favoriteVideoDetails && typeof settings.favoriteVideoDetails === 'object' && !Array.isArray(settings.favoriteVideoDetails)
+    ? settings.favoriteVideoDetails
     : {};
   settings.hiddenVideoDetails = Object.fromEntries(Object.entries(settings.hiddenVideoDetails).filter(([videoId, video]) => (
     settings.hiddenVideos.includes(videoId) && video && typeof video === 'object'
@@ -187,10 +199,29 @@ function migrateSettings(rawSettings = {}) {
   settings.categories = Array.isArray(settings.categories) && settings.categories.length > 0
     ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
     : defaultSettings.categories;
+  settings.favoriteVideoDetails = normalizeVideoDetails(settings.favoriteVideos, settings.favoriteVideoDetails, 'favoritedAt');
+  settings.recentlyWatched = settings.recentlyWatched.map((video) => normalizeVideoDetail(video.id, video, 'watchedAt'));
   return {
     settings,
     needsWrite: rawSettings.schemaVersion !== settingsSchemaVersion,
   };
+}
+
+function normalizeVideoDetail(videoId, video, dateField) {
+  return {
+    id: videoId,
+    title: String(video.title || videoId),
+    channelTitle: String(video.channelTitle || 'Unknown channel'),
+    channelId: String(video.channelId || ''),
+    thumbnail: String(video.thumbnail || ''),
+    [dateField]: String(video[dateField] || ''),
+  };
+}
+
+function normalizeVideoDetails(videoIds, details, dateField) {
+  return Object.fromEntries(Object.entries(details).filter(([videoId, video]) => (
+    videoIds.includes(videoId) && video && typeof video === 'object'
+  )).map(([videoId, video]) => [videoId, normalizeVideoDetail(videoId, video, dateField)]));
 }
 
 function validateImportSettings(rawSettings) {
@@ -208,6 +239,15 @@ function validateImportSettings(rawSettings) {
   }
   if (rawSettings.hiddenVideoDetails !== undefined && (!rawSettings.hiddenVideoDetails || typeof rawSettings.hiddenVideoDetails !== 'object' || Array.isArray(rawSettings.hiddenVideoDetails))) {
     throw new Error('Import file has invalid hiddenVideoDetails. Expected an object.');
+  }
+  if (rawSettings.favoriteVideos !== undefined && !Array.isArray(rawSettings.favoriteVideos)) {
+    throw new Error('Import file has invalid favoriteVideos. Expected an array.');
+  }
+  if (rawSettings.favoriteVideoDetails !== undefined && (!rawSettings.favoriteVideoDetails || typeof rawSettings.favoriteVideoDetails !== 'object' || Array.isArray(rawSettings.favoriteVideoDetails))) {
+    throw new Error('Import file has invalid favoriteVideoDetails. Expected an object.');
+  }
+  if (rawSettings.recentlyWatched !== undefined && !Array.isArray(rawSettings.recentlyWatched)) {
+    throw new Error('Import file has invalid recentlyWatched. Expected an array.');
   }
   if (rawSettings.categories !== undefined && !Array.isArray(rawSettings.categories)) {
     throw new Error('Import file has invalid categories. Expected an array.');

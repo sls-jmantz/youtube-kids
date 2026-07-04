@@ -20,6 +20,7 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 14. YouTube API key/quota failures show parent-readable diagnostics.
 15. Parent Admin can list and restore automatic settings backup snapshots.
 16. Hidden videos keep title/channel/thumbnail metadata for easier restoration.
+17. Watch mode supports Favorites and Recently Watched quick filters.
 
 ## Run
 
@@ -66,6 +67,10 @@ Unlock Parent Admin to reveal `Hide` buttons in Watch mode. Hidden videos disapp
 Hidden video entries keep their title, channel, thumbnail, and hidden date when available, even if the video later drops out of the current channel feed.
 
 YouTube API failures are translated into clearer parent-facing messages when possible, including invalid API key, denied API access, and quota exhaustion.
+
+## Favorites And Recent
+
+Use the `Favorite` button on a video card to add it to the Favorites filter. Starting a video records it in Recently Watched, which appears under the `Recent` quick filter.
 
 ## Safety Notes
 

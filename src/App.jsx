@@ -3,15 +3,18 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const emptySettings = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   approvedChannels: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
+  favoriteVideoDetails: {},
+  favoriteVideos: [],
   hiddenVideoDetails: {},
   hiddenVideos: [],
   language: 'en',
   pinHash: '',
   pinSalt: '',
+  recentlyWatched: [],
   region: 'US',
   youtubeApiKey: '',
 };
@@ -64,12 +67,24 @@ function createApprovedChannel(channel, fallbackTitle = '') {
   };
 }
 
+function videoSnapshot(video, dateField) {
+  return {
+    id: video.id,
+    title: video.title,
+    channelTitle: video.channelTitle,
+    channelId: video.channelId,
+    thumbnail: video.thumbnail,
+    [dateField]: new Date().toISOString(),
+  };
+}
+
 function App() {
   const [settings, setSettings] = useState(emptySettings);
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedChannelId, setSelectedChannelId] = useState('All');
+  const [quickFilter, setQuickFilter] = useState('All');
   const [mode, setMode] = useState('watch');
   const [channelIdInput, setChannelIdInput] = useState('');
   const [channelTitleInput, setChannelTitleInput] = useState('');
@@ -379,6 +394,38 @@ function App() {
     setStatus(`Hidden ${video.title}.`);
   }
 
+  async function playVideo(video) {
+    setSelectedVideo(video);
+    const snapshot = videoSnapshot(video, 'watchedAt');
+    await saveSettings({
+      ...settings,
+      recentlyWatched: [snapshot, ...settings.recentlyWatched.filter((item) => item.id !== video.id)].slice(0, 50),
+    });
+  }
+
+  async function toggleFavorite(video) {
+    const isFavorite = settings.favoriteVideos.includes(video.id);
+    if (isFavorite) {
+      const { [video.id]: _removed, ...nextFavoriteVideoDetails } = settings.favoriteVideoDetails;
+      await saveSettings({
+        ...settings,
+        favoriteVideos: settings.favoriteVideos.filter((videoId) => videoId !== video.id),
+        favoriteVideoDetails: nextFavoriteVideoDetails,
+      });
+      setStatus('Removed from favorites.');
+      return;
+    }
+    await saveSettings({
+      ...settings,
+      favoriteVideos: [...settings.favoriteVideos, video.id],
+      favoriteVideoDetails: {
+        ...settings.favoriteVideoDetails,
+        [video.id]: videoSnapshot(video, 'favoritedAt'),
+      },
+    });
+    setStatus(`Added ${video.title} to favorites.`);
+  }
+
   async function unhideVideo(videoId) {
     const { [videoId]: _removed, ...nextHiddenVideoDetails } = settings.hiddenVideoDetails;
     await saveSettings({
@@ -470,14 +517,20 @@ function App() {
     : enabledChannels.filter((channel) => (channel.category || 'Learning') === selectedCategory);
   const enabledApprovedIds = new Set(enabledChannels.map((channel) => channel.id));
   const hiddenVideoIds = new Set(settings.hiddenVideos);
+  const favoriteVideoIds = new Set(settings.favoriteVideos);
   const visibleVideos = videos.filter((video) => !hiddenVideoIds.has(video.id));
   const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) && !hiddenVideoIds.has(selectedVideo.id) ? selectedVideo : null;
   const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
-  const filteredVideos = visibleVideos.filter((video) => (
+  const quickFilteredVideos = visibleVideos.filter((video) => {
+    if (quickFilter === 'Favorites') return favoriteVideoIds.has(video.id);
+    if (quickFilter === 'Recent') return settings.recentlyWatched.some((item) => item.id === video.id);
+    return true;
+  });
+  const filteredVideos = quickFilteredVideos.filter((video) => (
     (selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory)
     && (selectedChannelId === 'All' || video.channelId === selectedChannelId)
   ));
-  const categoryFilteredVideos = visibleVideos.filter((video) => (
+  const categoryFilteredVideos = quickFilteredVideos.filter((video) => (
     selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory
   ));
   const hiddenVideoDetails = settings.hiddenVideos.map((videoId) => (
@@ -525,6 +578,20 @@ function App() {
             )}
           </div>
           <div className="category-filter" aria-label="Video categories">
+            {['All', 'Favorites', 'Recent'].map((filter) => (
+              <button
+                className={quickFilter === filter ? 'active' : ''}
+                key={filter}
+                onClick={() => {
+                  setQuickFilter(filter);
+                  setSelectedChannelId('All');
+                }}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+          <div className="category-filter secondary" aria-label="Video categories">
             {['All', ...settings.categories].map((category) => (
               <button
                 className={selectedCategory === category ? 'active' : ''}
@@ -562,12 +629,15 @@ function App() {
               <div className="empty-list">No videos match this filter yet.</div>
             ) : filteredVideos.map((video) => (
               <article className="video-card" key={video.id}>
-                <button className="video-play-button" onClick={() => setSelectedVideo(video)}>
+                <button className="video-play-button" onClick={() => playVideo(video)}>
                   {video.thumbnail && <img src={video.thumbnail} alt="" />}
                   <strong>{video.title}</strong>
                   <span>{video.channelTitle} · {categoryByChannelId.get(video.channelId) || 'Learning'}</span>
                 </button>
-                {adminUnlocked && <button className="hide-video-button" onClick={() => hideVideo(video)}>Hide</button>}
+                <div className="video-card-actions">
+                  <button className="favorite-video-button" onClick={() => toggleFavorite(video)}>{favoriteVideoIds.has(video.id) ? 'Favorited' : 'Favorite'}</button>
+                  {adminUnlocked && <button className="hide-video-button" onClick={() => hideVideo(video)}>Hide</button>}
+                </div>
               </article>
             ))}
           </div>
