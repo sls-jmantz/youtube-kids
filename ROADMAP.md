@@ -4,15 +4,14 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 
 ## In Progress
 
-- Clear loading, empty, and error states across network actions.
+- GitHub Actions release builds for Linux and Windows.
 
 ## Next
 
-- GitHub Actions release builds for Linux and Windows.
+- App icons and release metadata.
 
 ## Later
 
-- App icons and release metadata.
 - Unit tests for parsers, settings migrations, and allowlist behavior.
 - UI tests for PIN, approval, blacklist, review, and backup flows.
 
@@ -42,3 +41,4 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Favorites and recently watched.
 - Optional daily time windows and simple viewing limits.
 - Individual video allowlist support.
+- Clear loading, empty, and error states across network actions.

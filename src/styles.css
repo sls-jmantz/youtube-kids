@@ -237,6 +237,16 @@ h3 {
   text-align: center;
 }
 
+.state-card {
+  border-color: #cfd8ea;
+}
+
+.error-state {
+  background: #fff0f0;
+  border-color: #ffb6b6;
+  color: #9d1c1c;
+}
+
 .category-filter {
   display: flex;
   flex-wrap: wrap;

@@ -156,6 +156,12 @@ function App() {
   const [reviewVideos, setReviewVideos] = useState([]);
   const [appLog, setAppLog] = useState('');
   const [backups, setBackups] = useState([]);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState('');
+  const [discovering, setDiscovering] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [logLoading, setLogLoading] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [newPinInput, setNewPinInput] = useState('');
@@ -175,8 +181,12 @@ function App() {
       if (!enabledChannels.length) {
         setVideos([]);
         setSelectedVideo(null);
+        setLoadingVideos(false);
+        setVideoLoadError('');
         return;
       }
+      setLoadingVideos(true);
+      setVideoLoadError('');
       setStatus('Loading approved channel videos...');
       try {
         const feeds = await Promise.all(enabledChannels.map(async (channel) => {
@@ -192,7 +202,12 @@ function App() {
         setSelectedVideo((current) => current && nextVideos.some((video) => video.id === current.id) ? current : nextVideos[0] || null);
         setStatus(feeds.some((feed) => feed.fromCache) ? 'Ready using cached feeds for one or more channels.' : 'Ready');
       } catch (error) {
-        if (!cancelled) setStatus(error.message);
+        if (!cancelled) {
+          setVideoLoadError(error.message);
+          setStatus(error.message);
+        }
+      } finally {
+        if (!cancelled) setLoadingVideos(false);
       }
     }
     loadVideos();
@@ -477,12 +492,15 @@ function App() {
   }
 
   async function loadBackups() {
+    setBackupLoading(true);
     try {
       const snapshots = await window.appApi.listBackups();
       setBackups(snapshots);
       setStatus(`Found ${snapshots.length} backup snapshots.`);
     } catch (error) {
       setStatus(error.message);
+    } finally {
+      setBackupLoading(false);
     }
   }
 
@@ -569,12 +587,15 @@ function App() {
   }
 
   async function loadAppLog() {
+    setLogLoading(true);
     try {
       const logText = await window.appApi.readLog();
       setAppLog(logText || 'No log entries yet.');
       setStatus('Loaded app log.');
     } catch (error) {
       setStatus(error.message);
+    } finally {
+      setLogLoading(false);
     }
   }
 
@@ -605,6 +626,7 @@ function App() {
   }
 
   async function runDiscovery() {
+    setDiscovering(true);
     setStatus('Searching English channels...');
     try {
       const result = await window.appApi.discoverChannels({
@@ -626,12 +648,15 @@ function App() {
       setStatus(`Found ${visibleItems.length} new English-region channel candidates.`);
     } catch (error) {
       setStatus(error.message);
+    } finally {
+      setDiscovering(false);
     }
   }
 
   async function reviewCandidate(channel) {
     setReviewChannel(channel);
     setReviewVideos([]);
+    setReviewLoading(true);
     setStatus(`Loading recent uploads for ${channel.title}...`);
     try {
       const recentVideos = await window.appApi.fetchChannelVideos(channel.id);
@@ -639,6 +664,8 @@ function App() {
       setStatus(`Reviewing ${channel.title}.`);
     } catch (error) {
       setStatus(error.message);
+    } finally {
+      setReviewLoading(false);
     }
   }
 
@@ -782,7 +809,11 @@ function App() {
             </div>
           )}
           <div className="video-grid">
-            {filteredVideos.length === 0 ? (
+            {loadingVideos ? (
+              <div className="empty-list state-card">Loading approved channel videos...</div>
+            ) : videoLoadError ? (
+              <div className="empty-list state-card error-state">Could not refresh approved channel videos: {videoLoadError}</div>
+            ) : filteredVideos.length === 0 ? (
               <div className="empty-list">No videos match this filter yet.</div>
             ) : filteredVideos.map((video) => (
               <article className="video-card" key={video.id}>
@@ -974,10 +1005,14 @@ function App() {
             </label>
             <div className="search-row">
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search English kids channels" />
-              <button className="primary" onClick={runDiscovery}>Search</button>
+              <button className="primary" disabled={discovering} onClick={runDiscovery}>{discovering ? 'Searching...' : 'Search'}</button>
             </div>
             <div className="discover-results">
-              {discoverResults.map((channel) => (
+              {discovering ? (
+                <div className="empty-list state-card">Searching for English channel candidates...</div>
+              ) : discoverResults.length === 0 ? (
+                <div className="empty-list state-card">No discovery results loaded. Search when you are ready to review new channels.</div>
+              ) : discoverResults.map((channel) => (
                 <article className={`discover-card ${reviewChannel?.id === channel.id ? 'selected' : ''}`} key={channel.id}>
                   <button className="blacklist-button" title="Hide this channel from discovery" onClick={() => blockChannel(channel)}>X</button>
                   {channel.thumbnail && <img src={channel.thumbnail} alt="" />}
@@ -1006,7 +1041,9 @@ function App() {
                 </div>
                 <p>Recent uploads from the channel feed. Use this to spot duplicate, low-effort, or wrong-language channels before approval.</p>
                 <div className="review-video-grid">
-                  {reviewVideos.length === 0 ? (
+                  {reviewLoading ? (
+                    <p>Loading recent uploads...</p>
+                  ) : reviewVideos.length === 0 ? (
                     <p>No recent uploads found.</p>
                   ) : reviewVideos.map((video) => (
                     <article className="review-video" key={video.id}>
@@ -1138,8 +1175,9 @@ function App() {
               <div className="card-actions">
                 <button className="primary" onClick={exportSettings}>Export Settings</button>
                 <button className="quiet-button" onClick={importSettings}>Import Settings</button>
-                <button className="quiet-button" onClick={loadBackups}>Show Backups</button>
+                <button className="quiet-button" disabled={backupLoading} onClick={loadBackups}>{backupLoading ? 'Loading Backups...' : 'Show Backups'}</button>
               </div>
+              {!backupLoading && backups.length === 0 && <p>No backup snapshots loaded yet.</p>}
               {backups.length > 0 && (
                 <div className="backup-snapshot-list">
                   {backups.map((backup) => (
@@ -1157,7 +1195,7 @@ function App() {
             <div className="manager-list log-list">
               <h3>Troubleshooting Log</h3>
               <p>Recent feed and API failures are written locally for troubleshooting.</p>
-              <button className="primary" onClick={loadAppLog}>Load Recent Log</button>
+              <button className="primary" disabled={logLoading} onClick={loadAppLog}>{logLoading ? 'Loading Log...' : 'Load Recent Log'}</button>
               {appLog && <pre className="log-output">{appLog}</pre>}
             </div>
           </div>
