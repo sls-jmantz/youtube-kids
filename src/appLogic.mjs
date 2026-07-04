@@ -134,3 +134,28 @@ export function canPlayVideo(video, enabledChannelIds, approvedVideoIds, hiddenV
   if (!video || hiddenVideoIds.has(video.id)) return false;
   return enabledChannelIds.has(video.channelId) || approvedVideoIds.has(video.id);
 }
+
+export function modeForAdminOpen(settings, adminUnlocked) {
+  return !settings.pinHash || adminUnlocked ? 'admin' : 'unlock';
+}
+
+export function filterDiscoveryResults(items, approvedChannels, blockedChannels) {
+  const approvedIds = new Set(approvedChannels.map((channel) => channel.id));
+  const blockedIds = new Set(blockedChannels);
+  return items.filter((item) => !approvedIds.has(item.id) && !blockedIds.has(item.id));
+}
+
+export function channelApprovalState(settings, channelId) {
+  if (settings.approvedChannels.some((channel) => channel.id === channelId)) return 'already-approved';
+  if (settings.blockedChannels.includes(channelId)) return 'blocked-until-approved';
+  return 'ready';
+}
+
+export function nextReviewStateAfterChannelDecision(reviewChannel, channelId) {
+  return reviewChannel?.id === channelId ? { reviewChannel: null, reviewVideos: [] } : null;
+}
+
+export function backupPanelState(backups, loading) {
+  if (loading) return 'loading';
+  return backups.length > 0 ? 'has-backups' : 'empty';
+}

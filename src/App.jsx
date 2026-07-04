@@ -4,10 +4,15 @@ import './styles.css';
 import {
   approvedVideoFromInput,
   canPlayVideo,
+  backupPanelState,
+  channelApprovalState,
   createApprovedChannel,
   emptySettings,
+  filterDiscoveryResults,
+  modeForAdminOpen,
   normalizeChannelId,
   normalizeVideoId,
+  nextReviewStateAfterChannelDecision,
   parseBulkChannelLine,
   parseFeed,
   todayKey,
@@ -125,12 +130,9 @@ function App() {
   }
 
   function openAdmin() {
-    if (!settings.pinHash || adminUnlocked) {
-      setMode('admin');
-      return;
-    }
-    setPinInput('');
-    setMode('unlock');
+    const nextMode = modeForAdminOpen(settings, adminUnlocked);
+    if (nextMode === 'unlock') setPinInput('');
+    setMode(nextMode);
   }
 
   async function unlockAdmin() {
@@ -192,7 +194,7 @@ function App() {
       return;
     }
     const { id, title } = resolvedChannel;
-    if (settings.approvedChannels.some((approved) => approved.id === id)) {
+    if (channelApprovalState(settings, id) === 'already-approved') {
       setStatus('That channel is already approved.');
       return;
     }
@@ -202,9 +204,10 @@ function App() {
       blockedChannels: settings.blockedChannels.filter((blockedId) => blockedId !== id),
     });
     setDiscoverResults((results) => results.filter((result) => result.id !== id));
-    if (reviewChannel?.id === id) {
-      setReviewChannel(null);
-      setReviewVideos([]);
+    const nextReviewState = nextReviewStateAfterChannelDecision(reviewChannel, id);
+    if (nextReviewState) {
+      setReviewChannel(nextReviewState.reviewChannel);
+      setReviewVideos(nextReviewState.reviewVideos);
     }
     setChannelIdInput('');
     setChannelTitleInput('');
@@ -490,9 +493,10 @@ function App() {
       ...settings,
       blockedChannels: [...settings.blockedChannels, channel.id],
     });
-    if (reviewChannel?.id === channel.id) {
-      setReviewChannel(null);
-      setReviewVideos([]);
+    const nextReviewState = nextReviewStateAfterChannelDecision(reviewChannel, channel.id);
+    if (nextReviewState) {
+      setReviewChannel(nextReviewState.reviewChannel);
+      setReviewVideos(nextReviewState.reviewVideos);
     }
     setDiscoverResults((results) => results.filter((result) => result.id !== channel.id));
     setStatus(`Blacklisted ${channel.title}.`);
@@ -520,9 +524,7 @@ function App() {
         setStatus('Discovery needs a YouTube Data API key. Manual channel approval works without one.');
         return;
       }
-      const approvedIds = new Set(settings.approvedChannels.map((channel) => channel.id));
-      const blockedIds = new Set(settings.blockedChannels);
-      const visibleItems = result.items.filter((item) => !approvedIds.has(item.id) && !blockedIds.has(item.id));
+      const visibleItems = filterDiscoveryResults(result.items, settings.approvedChannels, settings.blockedChannels);
       setDiscoverResults(visibleItems);
       setReviewChannel(null);
       setReviewVideos([]);
@@ -576,6 +578,7 @@ function App() {
   const playableVideo = canPlaySelectedVideo && !hiddenVideoIds.has(selectedVideo.id) && !currentViewingStatus.blocked ? selectedVideo : null;
   const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
   const categoryForVideo = (video) => video.category || categoryByChannelId.get(video.channelId) || 'Learning';
+  const backupState = backupPanelState(backups, backupLoading);
   const quickFilteredVideos = visibleVideos.filter((video) => {
     if (quickFilter === 'Favorites') return favoriteVideoIds.has(video.id);
     if (quickFilter === 'Recent') return settings.recentlyWatched.some((item) => item.id === video.id);
@@ -1058,8 +1061,8 @@ function App() {
                 <button className="quiet-button" onClick={importSettings}>Import Settings</button>
                 <button className="quiet-button" disabled={backupLoading} onClick={loadBackups}>{backupLoading ? 'Loading Backups...' : 'Show Backups'}</button>
               </div>
-              {!backupLoading && backups.length === 0 && <p>No backup snapshots loaded yet.</p>}
-              {backups.length > 0 && (
+              {backupState === 'empty' && <p>No backup snapshots loaded yet.</p>}
+              {backupState === 'has-backups' && (
                 <div className="backup-snapshot-list">
                   {backups.map((backup) => (
                     <div className="manager-row" key={backup.fileName}>

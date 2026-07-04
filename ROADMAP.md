@@ -4,15 +4,15 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 
 ## In Progress
 
-- UI tests for PIN, approval, blacklist, review, and backup flows.
+- Manual release packaging checklist.
 
 ## Next
 
-- Manual release packaging checklist.
+- Installer smoke testing on Windows and Linux.
 
 ## Later
 
-- Installer smoke testing on Windows and Linux.
+- Parent-facing setup guide.
 
 ## Done
 
@@ -43,3 +43,4 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Clear loading, empty, and error states across network actions.
 - App icons and release metadata.
 - Unit tests for parsers, settings migrations, and allowlist behavior.
+- UI tests for PIN, approval, blacklist, review, and backup flows.
