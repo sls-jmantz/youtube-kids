@@ -4,15 +4,15 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 
 ## In Progress
 
-- Manual release packaging checklist.
+- Installer smoke testing on Windows and Linux.
 
 ## Next
 
-- Installer smoke testing on Windows and Linux.
+- Parent-facing setup guide.
 
 ## Later
 
-- Parent-facing setup guide.
+- Release versioning policy.
 
 ## Done
 
@@ -44,3 +44,4 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - App icons and release metadata.
 - Unit tests for parsers, settings migrations, and allowlist behavior.
 - UI tests for PIN, approval, blacklist, review, and backup flows.
+- Manual release packaging checklist.

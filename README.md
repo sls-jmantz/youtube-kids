@@ -49,6 +49,8 @@ npm run package:windows
 
 The app includes generated PNG/ICO icon assets under `build/`. Windows packaging is best run from Windows.
 
+See `RELEASE.md` for the manual release checklist.
+
 ## Approving Channels
 
 Manual approval works without an API key if you paste a YouTube channel ID that starts with `UC`. If you add a YouTube Data API key, manual approval can also resolve `@handles` and handle URLs. Bulk approval accepts one channel per line, including `Channel Name | UC...` or `Channel Name | @handle`.
