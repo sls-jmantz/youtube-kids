@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const isDev = !app.isPackaged;
-const settingsSchemaVersion = 5;
+const settingsSchemaVersion = 6;
 
 const defaultSettings = {
   schemaVersion: settingsSchemaVersion,
@@ -20,6 +20,14 @@ const defaultSettings = {
   pinSalt: '',
   recentlyWatched: [],
   region: 'US',
+  usageByDate: {},
+  viewingLimits: {
+    enabled: false,
+    dailyMinutes: 60,
+    quietHoursEnabled: false,
+    quietStart: '20:00',
+    quietEnd: '07:00',
+  },
   youtubeApiKey: '',
 };
 
@@ -180,6 +188,10 @@ function migrateSettings(rawSettings = {}) {
   settings.recentlyWatched = Array.isArray(settings.recentlyWatched)
     ? settings.recentlyWatched.filter((video) => video && typeof video === 'object' && typeof video.id === 'string').slice(0, 50)
     : [];
+  settings.usageByDate = settings.usageByDate && typeof settings.usageByDate === 'object' && !Array.isArray(settings.usageByDate)
+    ? Object.fromEntries(Object.entries(settings.usageByDate).map(([date, minutes]) => [date, Math.max(0, Number(minutes) || 0)]))
+    : {};
+  settings.viewingLimits = normalizeViewingLimits(settings.viewingLimits);
   settings.hiddenVideoDetails = settings.hiddenVideoDetails && typeof settings.hiddenVideoDetails === 'object' && !Array.isArray(settings.hiddenVideoDetails)
     ? settings.hiddenVideoDetails
     : {};
@@ -224,6 +236,18 @@ function normalizeVideoDetails(videoIds, details, dateField) {
   )).map(([videoId, video]) => [videoId, normalizeVideoDetail(videoId, video, dateField)]));
 }
 
+function normalizeViewingLimits(limits = {}) {
+  const dailyMinutes = Math.max(1, Math.min(720, Number(limits.dailyMinutes) || defaultSettings.viewingLimits.dailyMinutes));
+  const timePattern = /^\d{2}:\d{2}$/;
+  return {
+    enabled: limits.enabled === true,
+    dailyMinutes,
+    quietHoursEnabled: limits.quietHoursEnabled === true,
+    quietStart: timePattern.test(limits.quietStart || '') ? limits.quietStart : defaultSettings.viewingLimits.quietStart,
+    quietEnd: timePattern.test(limits.quietEnd || '') ? limits.quietEnd : defaultSettings.viewingLimits.quietEnd,
+  };
+}
+
 function validateImportSettings(rawSettings) {
   if (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) {
     throw new Error('Import file must be a JSON object.');
@@ -248,6 +272,12 @@ function validateImportSettings(rawSettings) {
   }
   if (rawSettings.recentlyWatched !== undefined && !Array.isArray(rawSettings.recentlyWatched)) {
     throw new Error('Import file has invalid recentlyWatched. Expected an array.');
+  }
+  if (rawSettings.usageByDate !== undefined && (!rawSettings.usageByDate || typeof rawSettings.usageByDate !== 'object' || Array.isArray(rawSettings.usageByDate))) {
+    throw new Error('Import file has invalid usageByDate. Expected an object.');
+  }
+  if (rawSettings.viewingLimits !== undefined && (!rawSettings.viewingLimits || typeof rawSettings.viewingLimits !== 'object' || Array.isArray(rawSettings.viewingLimits))) {
+    throw new Error('Import file has invalid viewingLimits. Expected an object.');
   }
   if (rawSettings.categories !== undefined && !Array.isArray(rawSettings.categories)) {
     throw new Error('Import file has invalid categories. Expected an array.');

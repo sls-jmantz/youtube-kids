@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const emptySettings = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   approvedChannels: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
@@ -16,8 +16,43 @@ const emptySettings = {
   pinSalt: '',
   recentlyWatched: [],
   region: 'US',
+  usageByDate: {},
+  viewingLimits: {
+    enabled: false,
+    dailyMinutes: 60,
+    quietHoursEnabled: false,
+    quietStart: '20:00',
+    quietEnd: '07:00',
+  },
   youtubeApiKey: '',
 };
+
+function todayKey() {
+  return new Date().toLocaleDateString('en-CA');
+}
+
+function minutesForTime(value) {
+  const [hours, minutes] = value.split(':').map(Number);
+  return (hours * 60) + minutes;
+}
+
+function isWithinQuietHours(limits) {
+  if (!limits.quietHoursEnabled) return false;
+  const now = new Date();
+  const current = (now.getHours() * 60) + now.getMinutes();
+  const start = minutesForTime(limits.quietStart || '20:00');
+  const end = minutesForTime(limits.quietEnd || '07:00');
+  return start <= end ? current >= start && current < end : current >= start || current < end;
+}
+
+function viewingStatus(settings) {
+  const limits = settings.viewingLimits;
+  const usedToday = settings.usageByDate[todayKey()] || 0;
+  if (!limits.enabled) return { blocked: false, usedToday, reason: '' };
+  if (isWithinQuietHours(limits)) return { blocked: true, usedToday, reason: 'Quiet hours are active.' };
+  if (usedToday >= limits.dailyMinutes) return { blocked: true, usedToday, reason: 'Daily viewing limit reached.' };
+  return { blocked: false, usedToday, reason: '' };
+}
 
 function parseFeed(xmlText, channel) {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
@@ -140,6 +175,27 @@ function App() {
       cancelled = true;
     };
   }, [settings.approvedChannels]);
+
+  const currentViewingStatus = viewingStatus(settings);
+
+  useEffect(() => {
+    if (!selectedVideo || currentViewingStatus.blocked || !settings.viewingLimits.enabled) return undefined;
+    const interval = window.setInterval(() => {
+      const key = todayKey();
+      setSettings((currentSettings) => {
+        const nextSettings = {
+          ...currentSettings,
+          usageByDate: {
+            ...currentSettings.usageByDate,
+            [key]: (currentSettings.usageByDate[key] || 0) + 1,
+          },
+        };
+        window.appApi.writeSettings(nextSettings).catch((error) => setStatus(error.message));
+        return nextSettings;
+      });
+    }, 60000);
+    return () => window.clearInterval(interval);
+  }, [selectedVideo, currentViewingStatus.blocked, settings.viewingLimits.enabled]);
 
   async function saveSettings(nextSettings) {
     const saved = await window.appApi.writeSettings(nextSettings);
@@ -395,6 +451,10 @@ function App() {
   }
 
   async function playVideo(video) {
+    if (currentViewingStatus.blocked) {
+      setStatus(currentViewingStatus.reason);
+      return;
+    }
     setSelectedVideo(video);
     const snapshot = videoSnapshot(video, 'watchedAt');
     await saveSettings({
@@ -519,7 +579,7 @@ function App() {
   const hiddenVideoIds = new Set(settings.hiddenVideos);
   const favoriteVideoIds = new Set(settings.favoriteVideos);
   const visibleVideos = videos.filter((video) => !hiddenVideoIds.has(video.id));
-  const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) && !hiddenVideoIds.has(selectedVideo.id) ? selectedVideo : null;
+  const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) && !hiddenVideoIds.has(selectedVideo.id) && !currentViewingStatus.blocked ? selectedVideo : null;
   const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
   const quickFilteredVideos = visibleVideos.filter((video) => {
     if (quickFilter === 'Favorites') return favoriteVideoIds.has(video.id);
@@ -573,10 +633,20 @@ function App() {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
               />
+            ) : currentViewingStatus.blocked ? (
+              <div className="empty-player limit-player">
+                <strong>{currentViewingStatus.reason}</strong>
+                <span>{currentViewingStatus.usedToday} of {settings.viewingLimits.dailyMinutes} minutes used today.</span>
+              </div>
             ) : (
               <div className="empty-player">Approve a channel to start watching.</div>
             )}
           </div>
+          {settings.viewingLimits.enabled && (
+            <div className="usage-banner">
+              Today: {currentViewingStatus.usedToday} / {settings.viewingLimits.dailyMinutes} minutes
+            </div>
+          )}
           <div className="category-filter" aria-label="Video categories">
             {['All', 'Favorites', 'Recent'].map((filter) => (
               <button
@@ -858,6 +928,79 @@ function App() {
                 />
               </label>
               <button className="primary" onClick={setParentPin}>{settings.pinHash ? 'Change PIN' : 'Set PIN'}</button>
+            </div>
+            <div className="manager-list limits-list">
+              <h3>Viewing Limits</h3>
+              <p>Simple limits count one minute while a video is selected in Watch mode.</p>
+              <label className="inline-toggle limit-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.viewingLimits.enabled}
+                  onChange={(event) => saveSettings({
+                    ...settings,
+                    viewingLimits: { ...settings.viewingLimits, enabled: event.target.checked },
+                  })}
+                />
+                Enable daily viewing limit
+              </label>
+              <label>
+                Daily Minutes
+                <input
+                  min="1"
+                  max="720"
+                  type="number"
+                  value={settings.viewingLimits.dailyMinutes}
+                  onChange={(event) => saveSettings({
+                    ...settings,
+                    viewingLimits: { ...settings.viewingLimits, dailyMinutes: Number(event.target.value) || 1 },
+                  })}
+                />
+              </label>
+              <label className="inline-toggle limit-toggle">
+                <input
+                  type="checkbox"
+                  checked={settings.viewingLimits.quietHoursEnabled}
+                  onChange={(event) => saveSettings({
+                    ...settings,
+                    viewingLimits: { ...settings.viewingLimits, quietHoursEnabled: event.target.checked },
+                  })}
+                />
+                Enable quiet hours
+              </label>
+              <div className="settings-row">
+                <label>
+                  Quiet Start
+                  <input
+                    type="time"
+                    value={settings.viewingLimits.quietStart}
+                    onChange={(event) => saveSettings({
+                      ...settings,
+                      viewingLimits: { ...settings.viewingLimits, quietStart: event.target.value || '20:00' },
+                    })}
+                  />
+                </label>
+                <label>
+                  Quiet End
+                  <input
+                    type="time"
+                    value={settings.viewingLimits.quietEnd}
+                    onChange={(event) => saveSettings({
+                      ...settings,
+                      viewingLimits: { ...settings.viewingLimits, quietEnd: event.target.value || '07:00' },
+                    })}
+                  />
+                </label>
+              </div>
+              <div className="manager-row">
+                <div>
+                  <strong>Used Today</strong>
+                  <span>{currentViewingStatus.usedToday} minutes</span>
+                </div>
+                <button onClick={() => saveSettings({
+                  ...settings,
+                  usageByDate: { ...settings.usageByDate, [todayKey()]: 0 },
+                })}>Reset Today</button>
+              </div>
             </div>
             <div className="manager-list backup-list">
               <h3>Backup And Restore</h3>

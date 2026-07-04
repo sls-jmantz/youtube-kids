@@ -21,6 +21,7 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 15. Parent Admin can list and restore automatic settings backup snapshots.
 16. Hidden videos keep title/channel/thumbnail metadata for easier restoration.
 17. Watch mode supports Favorites and Recently Watched quick filters.
+18. Parent Admin can configure daily viewing minutes and quiet hours.
 
 ## Run
 
@@ -71,6 +72,10 @@ YouTube API failures are translated into clearer parent-facing messages when pos
 ## Favorites And Recent
 
 Use the `Favorite` button on a video card to add it to the Favorites filter. Starting a video records it in Recently Watched, which appears under the `Recent` quick filter.
+
+## Viewing Limits
+
+Parent Admin includes simple viewing limits. When enabled, the app counts one minute while a video is selected in Watch mode, blocks playback after the daily minute limit, and can block playback during configured quiet hours.
 
 ## Safety Notes
 
