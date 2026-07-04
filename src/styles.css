@@ -45,6 +45,11 @@ button {
   text-transform: uppercase;
 }
 
+.eyebrow.dark {
+  color: #9a6a00;
+  margin-bottom: 6px;
+}
+
 h1,
 h2,
 p {
@@ -244,6 +249,11 @@ input {
   position: relative;
 }
 
+.discover-card.selected {
+  border-color: #ffcb45;
+  box-shadow: 0 12px 30px rgba(255, 203, 69, 0.24);
+}
+
 .discover-card img {
   border-radius: 14px;
   width: 100%;
@@ -326,6 +336,57 @@ input {
   border: 2px solid #ffe3a0;
   border-radius: 20px;
   padding: 18px;
+}
+
+.review-panel {
+  background: #fff8ec;
+  border: 2px solid #ffe3a0;
+  border-radius: 24px;
+  margin-top: 22px;
+  padding: 18px;
+}
+
+.review-heading {
+  align-items: start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.review-video-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin-top: 14px;
+}
+
+.review-video {
+  background: #ffffff;
+  border-radius: 16px;
+  display: grid;
+  gap: 7px;
+  overflow: hidden;
+  padding-bottom: 10px;
+}
+
+.review-video img {
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  width: 100%;
+}
+
+.review-video strong,
+.review-video span {
+  padding: 0 10px;
+}
+
+.review-video strong {
+  font-size: 13px;
+}
+
+.review-video span {
+  color: #697386;
+  font-size: 12px;
 }
 
 @media (max-width: 900px) {

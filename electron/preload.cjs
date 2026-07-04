@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('appApi', {
   setPin: (pin) => ipcRenderer.invoke('pin:set', pin),
   verifyPin: (pin) => ipcRenderer.invoke('pin:verify', pin),
   fetchChannelFeed: (channelId) => ipcRenderer.invoke('youtube:feed', channelId),
+  fetchChannelVideos: (channelId) => ipcRenderer.invoke('youtube:channelVideos', channelId),
   resolveChannel: (request) => ipcRenderer.invoke('youtube:resolveChannel', request),
   discoverChannels: (request) => ipcRenderer.invoke('youtube:discover', request),
 });

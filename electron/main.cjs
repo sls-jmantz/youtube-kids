@@ -78,6 +78,20 @@ function isAllowedFrameUrl(url) {
   return url.startsWith('https://www.youtube-nocookie.com/') || url.startsWith('https://www.youtube.com/embed/');
 }
 
+function parseFeedEntries(xmlText) {
+  const entries = [...xmlText.matchAll(/<entry>[\s\S]*?<\/entry>/g)].map((match) => match[0]);
+  return entries.map((entry) => {
+    const textFor = (tagName) => entry.match(new RegExp(`<(?:[a-z]+:)?${tagName}[^>]*>([\\s\\S]*?)<\\/(?:[a-z]+:)?${tagName}>`))?.[1] || '';
+    const thumbnail = entry.match(/<media:thumbnail[^>]*url="([^"]+)"/)?.[1] || '';
+    return {
+      id: textFor('videoId'),
+      title: textFor('title').replace(/<!\[CDATA\[|\]\]>/g, '') || 'Untitled video',
+      published: textFor('published'),
+      thumbnail,
+    };
+  }).filter((video) => video.id);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -148,6 +162,13 @@ app.whenReady().then(() => {
     const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`);
     if (!response.ok) throw new Error(`Feed request failed: ${response.status}`);
     return response.text();
+  });
+
+  ipcMain.handle('youtube:channelVideos', async (_event, channelId) => {
+    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`);
+    if (!response.ok) throw new Error(`Preview request failed: ${response.status}`);
+    const videos = parseFeedEntries(await response.text());
+    return videos.slice(0, 10);
   });
 
   ipcMain.handle('youtube:resolveChannel', async (_event, { input, apiKey }) => {

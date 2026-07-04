@@ -41,6 +41,8 @@ function App() {
   const [channelTitleInput, setChannelTitleInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('nursery rhymes');
   const [discoverResults, setDiscoverResults] = useState([]);
+  const [reviewChannel, setReviewChannel] = useState(null);
+  const [reviewVideos, setReviewVideos] = useState([]);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [newPinInput, setNewPinInput] = useState('');
@@ -156,6 +158,10 @@ function App() {
       blockedChannels: settings.blockedChannels.filter((blockedId) => blockedId !== id),
     });
     setDiscoverResults((results) => results.filter((result) => result.id !== id));
+    if (reviewChannel?.id === id) {
+      setReviewChannel(null);
+      setReviewVideos([]);
+    }
     setChannelIdInput('');
     setChannelTitleInput('');
     setStatus(`Approved ${title}`);
@@ -179,6 +185,10 @@ function App() {
       ...settings,
       blockedChannels: [...settings.blockedChannels, channel.id],
     });
+    if (reviewChannel?.id === channel.id) {
+      setReviewChannel(null);
+      setReviewVideos([]);
+    }
     setDiscoverResults((results) => results.filter((result) => result.id !== channel.id));
     setStatus(`Blacklisted ${channel.title}.`);
   }
@@ -208,7 +218,22 @@ function App() {
       const blockedIds = new Set(settings.blockedChannels);
       const visibleItems = result.items.filter((item) => !approvedIds.has(item.id) && !blockedIds.has(item.id));
       setDiscoverResults(visibleItems);
+      setReviewChannel(null);
+      setReviewVideos([]);
       setStatus(`Found ${visibleItems.length} new English-region channel candidates.`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
+  async function reviewCandidate(channel) {
+    setReviewChannel(channel);
+    setReviewVideos([]);
+    setStatus(`Loading recent uploads for ${channel.title}...`);
+    try {
+      const recentVideos = await window.appApi.fetchChannelVideos(channel.id);
+      setReviewVideos(recentVideos);
+      setStatus(`Reviewing ${channel.title}.`);
     } catch (error) {
       setStatus(error.message);
     }
@@ -342,20 +367,46 @@ function App() {
             </div>
             <div className="discover-results">
               {discoverResults.map((channel) => (
-                <article className="discover-card" key={channel.id}>
+                <article className={`discover-card ${reviewChannel?.id === channel.id ? 'selected' : ''}`} key={channel.id}>
                   <button className="blacklist-button" title="Hide this channel from discovery" onClick={() => blockChannel(channel)}>X</button>
                   {channel.thumbnail && <img src={channel.thumbnail} alt="" />}
                   <div>
                     <strong>{channel.title}</strong>
                     <p>{channel.description || 'No description.'}</p>
                     <div className="card-actions">
-                      <button onClick={() => addChannel(channel)}>Approve</button>
+                      <button onClick={() => reviewCandidate(channel)}>Review</button>
                       <button className="quiet-button" onClick={() => blockChannel(channel)}>Blacklist</button>
                     </div>
                   </div>
                 </article>
               ))}
             </div>
+            {reviewChannel && (
+              <div className="review-panel">
+                <div className="review-heading">
+                  <div>
+                    <p className="eyebrow dark">Review Candidate</p>
+                    <h3>{reviewChannel.title}</h3>
+                  </div>
+                  <div className="card-actions">
+                    <button className="primary" onClick={() => addChannel(reviewChannel)}>Approve Channel</button>
+                    <button className="quiet-button" onClick={() => blockChannel(reviewChannel)}>Blacklist</button>
+                  </div>
+                </div>
+                <p>Recent uploads from the channel feed. Use this to spot duplicate, low-effort, or wrong-language channels before approval.</p>
+                <div className="review-video-grid">
+                  {reviewVideos.length === 0 ? (
+                    <p>No recent uploads found.</p>
+                  ) : reviewVideos.map((video) => (
+                    <article className="review-video" key={video.id}>
+                      {video.thumbnail && <img src={video.thumbnail} alt="" />}
+                      <strong>{video.title}</strong>
+                      {video.published && <span>{new Date(video.published).toLocaleDateString()}</span>}
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="manager-list blacklist-list">
               <h3>Discovery Blacklist</h3>
               {settings.blockedChannels.length === 0 ? (

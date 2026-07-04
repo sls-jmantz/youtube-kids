@@ -8,7 +8,7 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 2. Parent Admin mode manages the local channel allowlist.
 3. Discovery mode is parent-only and uses YouTube Data API search with `relevanceLanguage=en`, `regionCode=US`, and `safeSearch=strict`.
 4. Playback uses `youtube-nocookie.com` embeds, not open YouTube browsing.
-5. Discovery results can be approved immediately or blacklisted with the `X` button so low-quality channels stop appearing.
+5. Discovery results can be reviewed with recent uploads before approval, or blacklisted with the `X` button so low-quality channels stop appearing.
 6. Parent Admin can be protected with a local 4-8 digit PIN.
 
 ## Run
@@ -31,7 +31,7 @@ Windows packaging is best run from Windows or a CI runner configured for Windows
 
 Manual approval works without an API key if you paste a YouTube channel ID that starts with `UC`. If you add a YouTube Data API key, manual approval can also resolve `@handles` and handle URLs.
 
-Discovery requires a YouTube Data API key. Add it in Parent Admin, then search for English channel candidates and approve only the channels you trust. Click `X` or `Blacklist` on a discovery result to hide it from future discovery searches.
+Discovery requires a YouTube Data API key. Add it in Parent Admin, then search for English channel candidates. Click `Review` to inspect recent uploads before approving the channel. Click `X` or `Blacklist` on a discovery result to hide it from future discovery searches.
 
 ## Parent PIN
 
