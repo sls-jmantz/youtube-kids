@@ -41,4 +41,3 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Optional daily time windows and simple viewing limits.
 - Individual video allowlist support.
 - Clear loading, empty, and error states across network actions.
-- GitHub Actions release builds for Linux and Windows.
