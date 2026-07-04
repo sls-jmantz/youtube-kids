@@ -467,6 +467,13 @@ textarea {
   padding: 12px;
 }
 
+.row-thumbnail {
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  object-fit: cover;
+  width: 86px;
+}
+
 .manager-row.disabled {
   opacity: 0.62;
 }
@@ -543,6 +550,12 @@ textarea {
 .backup-list p {
   color: #697386;
   font-size: 14px;
+}
+
+.backup-snapshot-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .hidden-video-list,

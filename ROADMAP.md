@@ -5,17 +5,15 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 ## In Progress
 
 - Clear loading, empty, and error states across network actions.
-- Better hidden-video details when a video is not in the current feed cache.
+- Favorites and recently watched.
 
 ## Next
 
-- Export/import UI for choosing and restoring from automatic backup snapshots.
+- Optional daily time windows and simple viewing limits.
 
 ## Later
 
 - Individual video allowlist support.
-- Favorites and recently watched.
-- Optional daily time windows and simple viewing limits.
 - GitHub Actions release builds for Linux and Windows.
 - App icons and release metadata.
 - Unit tests for parsers, settings migrations, and allowlist behavior.
@@ -42,3 +40,5 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - API quota and invalid-key diagnostics.
 - Settings backup history before destructive changes.
 - Import validation with readable error messages.
+- Export/import UI for choosing and restoring from automatic backup snapshots.
+- Better hidden-video details when a video is not in the current feed cache.

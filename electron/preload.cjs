@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('appApi', {
   backupSettings: (reason) => ipcRenderer.invoke('settings:backup', reason),
   exportSettings: () => ipcRenderer.invoke('settings:export'),
   importSettings: () => ipcRenderer.invoke('settings:import'),
+  listBackups: () => ipcRenderer.invoke('settings:listBackups'),
+  restoreBackup: (fileName) => ipcRenderer.invoke('settings:restoreBackup', fileName),
   readLog: () => ipcRenderer.invoke('log:read'),
   setPin: (pin) => ipcRenderer.invoke('pin:set', pin),
   verifyPin: (pin) => ipcRenderer.invoke('pin:verify', pin),

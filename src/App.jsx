@@ -3,10 +3,11 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const emptySettings = {
-  schemaVersion: 2,
+  schemaVersion: 4,
   approvedChannels: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
+  hiddenVideoDetails: {},
   hiddenVideos: [],
   language: 'en',
   pinHash: '',
@@ -79,6 +80,7 @@ function App() {
   const [reviewChannel, setReviewChannel] = useState(null);
   const [reviewVideos, setReviewVideos] = useState([]);
   const [appLog, setAppLog] = useState('');
+  const [backups, setBackups] = useState([]);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [newPinInput, setNewPinInput] = useState('');
@@ -331,18 +333,58 @@ function App() {
     }
   }
 
+  async function loadBackups() {
+    try {
+      const snapshots = await window.appApi.listBackups();
+      setBackups(snapshots);
+      setStatus(`Found ${snapshots.length} backup snapshots.`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
+  async function restoreBackup(fileName) {
+    try {
+      const result = await window.appApi.restoreBackup(fileName);
+      setSettings(result.settings);
+      setDiscoverResults([]);
+      setReviewChannel(null);
+      setReviewVideos([]);
+      await loadBackups();
+      setStatus(`Restored backup ${fileName}.`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
   async function hideVideo(video) {
     if (settings.hiddenVideos.includes(video.id)) return;
     const nextHiddenVideos = [...settings.hiddenVideos, video.id];
-    await saveSettings({ ...settings, hiddenVideos: nextHiddenVideos });
+    await saveSettings({
+      ...settings,
+      hiddenVideos: nextHiddenVideos,
+      hiddenVideoDetails: {
+        ...settings.hiddenVideoDetails,
+        [video.id]: {
+          id: video.id,
+          title: video.title,
+          channelTitle: video.channelTitle,
+          channelId: video.channelId,
+          thumbnail: video.thumbnail,
+          hiddenAt: new Date().toISOString(),
+        },
+      },
+    });
     setSelectedVideo((current) => current?.id === video.id ? null : current);
     setStatus(`Hidden ${video.title}.`);
   }
 
   async function unhideVideo(videoId) {
+    const { [videoId]: _removed, ...nextHiddenVideoDetails } = settings.hiddenVideoDetails;
     await saveSettings({
       ...settings,
       hiddenVideos: settings.hiddenVideos.filter((hiddenId) => hiddenId !== videoId),
+      hiddenVideoDetails: nextHiddenVideoDetails,
     });
     setStatus('Video restored.');
   }
@@ -439,7 +481,7 @@ function App() {
     selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory
   ));
   const hiddenVideoDetails = settings.hiddenVideos.map((videoId) => (
-    videos.find((video) => video.id === videoId) || { id: videoId, title: videoId, channelTitle: 'Unknown channel' }
+    videos.find((video) => video.id === videoId) || settings.hiddenVideoDetails[videoId] || { id: videoId, title: videoId, channelTitle: 'Unknown channel' }
   ));
 
   return (
@@ -723,9 +765,10 @@ function App() {
                 <p>No hidden videos.</p>
               ) : hiddenVideoDetails.map((video) => (
                 <div className="manager-row" key={video.id}>
+                  {video.thumbnail && <img className="row-thumbnail" src={video.thumbnail} alt="" />}
                   <div>
                     <strong>{video.title}</strong>
-                    <span>{video.channelTitle}</span>
+                    <span>{video.channelTitle}{video.hiddenAt ? ` · Hidden ${new Date(video.hiddenAt).toLocaleDateString()}` : ''}</span>
                   </div>
                   <button onClick={() => unhideVideo(video.id)}>Unhide</button>
                 </div>
@@ -752,7 +795,21 @@ function App() {
               <div className="card-actions">
                 <button className="primary" onClick={exportSettings}>Export Settings</button>
                 <button className="quiet-button" onClick={importSettings}>Import Settings</button>
+                <button className="quiet-button" onClick={loadBackups}>Show Backups</button>
               </div>
+              {backups.length > 0 && (
+                <div className="backup-snapshot-list">
+                  {backups.map((backup) => (
+                    <div className="manager-row" key={backup.fileName}>
+                      <div>
+                        <strong>{backup.fileName}</strong>
+                        <span>{new Date(backup.createdAt).toLocaleString()} · {Math.round(backup.size / 1024)} KB</span>
+                      </div>
+                      <button onClick={() => restoreBackup(backup.fileName)}>Restore</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="manager-list log-list">
               <h3>Troubleshooting Log</h3>

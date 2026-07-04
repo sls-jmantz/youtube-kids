@@ -4,13 +4,14 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const isDev = !app.isPackaged;
-const settingsSchemaVersion = 3;
+const settingsSchemaVersion = 4;
 
 const defaultSettings = {
   schemaVersion: settingsSchemaVersion,
   approvedChannels: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
+  hiddenVideoDetails: {},
   hiddenVideos: [],
   language: 'en',
   pinHash: '',
@@ -85,6 +86,42 @@ async function backupCurrentSettings(reason) {
   }
 }
 
+async function listSettingBackups() {
+  try {
+    const backups = await fs.readdir(backupDir());
+    return (await Promise.all(backups.filter((fileName) => fileName.endsWith('.json')).map(async (fileName) => {
+      const filePath = path.join(backupDir(), fileName);
+      const stat = await fs.stat(filePath);
+      return {
+        fileName,
+        createdAt: stat.mtime.toISOString(),
+        size: stat.size,
+      };
+    }))).sort((a, b) => b.fileName.localeCompare(a.fileName));
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+async function restoreSettingsBackup(fileName) {
+  const backups = await listSettingBackups();
+  if (!backups.some((backup) => backup.fileName === fileName)) throw new Error('Backup snapshot not found.');
+  const filePath = path.join(backupDir(), fileName);
+  const raw = JSON.parse(await fs.readFile(filePath, 'utf8'));
+  validateImportSettings(raw);
+  const currentSettings = await readSettings();
+  const restored = migrateSettings({
+    ...currentSettings,
+    ...raw,
+    pinHash: currentSettings.pinHash,
+    pinSalt: currentSettings.pinSalt,
+    youtubeApiKey: currentSettings.youtubeApiKey,
+  }).settings;
+  await backupCurrentSettings('before-restore-backup');
+  return writeSettings(restored);
+}
+
 async function fetchChannelFeed(channelId) {
   const cachePath = feedCachePath(channelId);
   try {
@@ -134,6 +171,19 @@ function migrateSettings(rawSettings = {}) {
   settings.hiddenVideos = Array.isArray(settings.hiddenVideos)
     ? [...new Set(settings.hiddenVideos.map((id) => String(id).trim()).filter(Boolean))]
     : [];
+  settings.hiddenVideoDetails = settings.hiddenVideoDetails && typeof settings.hiddenVideoDetails === 'object' && !Array.isArray(settings.hiddenVideoDetails)
+    ? settings.hiddenVideoDetails
+    : {};
+  settings.hiddenVideoDetails = Object.fromEntries(Object.entries(settings.hiddenVideoDetails).filter(([videoId, video]) => (
+    settings.hiddenVideos.includes(videoId) && video && typeof video === 'object'
+  )).map(([videoId, video]) => [videoId, {
+    id: videoId,
+    title: String(video.title || videoId),
+    channelTitle: String(video.channelTitle || 'Unknown channel'),
+    channelId: String(video.channelId || ''),
+    thumbnail: String(video.thumbnail || ''),
+    hiddenAt: String(video.hiddenAt || ''),
+  }]));
   settings.categories = Array.isArray(settings.categories) && settings.categories.length > 0
     ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
     : defaultSettings.categories;
@@ -155,6 +205,9 @@ function validateImportSettings(rawSettings) {
   }
   if (rawSettings.hiddenVideos !== undefined && !Array.isArray(rawSettings.hiddenVideos)) {
     throw new Error('Import file has invalid hiddenVideos. Expected an array.');
+  }
+  if (rawSettings.hiddenVideoDetails !== undefined && (!rawSettings.hiddenVideoDetails || typeof rawSettings.hiddenVideoDetails !== 'object' || Array.isArray(rawSettings.hiddenVideoDetails))) {
+    throw new Error('Import file has invalid hiddenVideoDetails. Expected an object.');
   }
   if (rawSettings.categories !== undefined && !Array.isArray(rawSettings.categories)) {
     throw new Error('Import file has invalid categories. Expected an array.');
@@ -301,6 +354,13 @@ app.whenReady().then(() => {
   ipcMain.handle('settings:backup', async (_event, reason = 'manual') => {
     await backupCurrentSettings(String(reason).replace(/[^a-z0-9-]/gi, '-').toLowerCase() || 'manual');
     return { ok: true };
+  });
+
+  ipcMain.handle('settings:listBackups', () => listSettingBackups());
+
+  ipcMain.handle('settings:restoreBackup', async (_event, fileName) => {
+    const settings = await restoreSettingsBackup(String(fileName || ''));
+    return { settings };
   });
 
   ipcMain.handle('settings:export', async () => {
