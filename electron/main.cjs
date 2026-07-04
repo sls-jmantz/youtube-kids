@@ -22,6 +22,10 @@ function settingsPath() {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
+function feedCachePath(channelId) {
+  return path.join(app.getPath('userData'), 'feed-cache', `${channelId}.xml`);
+}
+
 async function readSettings() {
   try {
     const raw = await fs.readFile(settingsPath(), 'utf8');
@@ -39,6 +43,24 @@ async function writeSettings(settings) {
   await fs.mkdir(path.dirname(settingsPath()), { recursive: true });
   await fs.writeFile(settingsPath(), JSON.stringify(nextSettings, null, 2));
   return nextSettings;
+}
+
+async function fetchChannelFeed(channelId) {
+  const cachePath = feedCachePath(channelId);
+  try {
+    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`);
+    if (!response.ok) throw new Error(`Feed request failed: ${response.status}`);
+    const xmlText = await response.text();
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    await fs.writeFile(cachePath, xmlText);
+    return { xmlText, fromCache: false };
+  } catch (error) {
+    try {
+      return { xmlText: await fs.readFile(cachePath, 'utf8'), fromCache: true, warning: error.message };
+    } catch (_cacheError) {
+      throw error;
+    }
+  }
 }
 
 function normalizeApprovedChannel(channel) {
@@ -239,15 +261,12 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('youtube:feed', async (_event, channelId) => {
-    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`);
-    if (!response.ok) throw new Error(`Feed request failed: ${response.status}`);
-    return response.text();
+    return fetchChannelFeed(channelId);
   });
 
   ipcMain.handle('youtube:channelVideos', async (_event, channelId) => {
-    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`);
-    if (!response.ok) throw new Error(`Preview request failed: ${response.status}`);
-    const videos = parseFeedEntries(await response.text());
+    const feed = await fetchChannelFeed(channelId);
+    const videos = parseFeedEntries(feed.xmlText);
     return videos.slice(0, 10);
   });
 

@@ -67,6 +67,7 @@ function App() {
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedChannelId, setSelectedChannelId] = useState('All');
   const [mode, setMode] = useState('watch');
   const [channelIdInput, setChannelIdInput] = useState('');
   const [channelTitleInput, setChannelTitleInput] = useState('');
@@ -100,14 +101,17 @@ function App() {
       setStatus('Loading approved channel videos...');
       try {
         const feeds = await Promise.all(enabledChannels.map(async (channel) => {
-          const xml = await window.appApi.fetchChannelFeed(channel.id);
-          return parseFeed(xml, channel);
+          const feed = await window.appApi.fetchChannelFeed(channel.id);
+          return {
+            videos: parseFeed(feed.xmlText, channel),
+            fromCache: feed.fromCache,
+          };
         }));
         if (cancelled) return;
-        const nextVideos = feeds.flat().sort((a, b) => new Date(b.published) - new Date(a.published));
+        const nextVideos = feeds.flatMap((feed) => feed.videos).sort((a, b) => new Date(b.published) - new Date(a.published));
         setVideos(nextVideos);
         setSelectedVideo((current) => current && nextVideos.some((video) => video.id === current.id) ? current : nextVideos[0] || null);
-        setStatus('Ready');
+        setStatus(feeds.some((feed) => feed.fromCache) ? 'Ready using cached feeds for one or more channels.' : 'Ready');
       } catch (error) {
         if (!cancelled) setStatus(error.message);
       }
@@ -388,12 +392,20 @@ function App() {
   }
 
   const approvedIds = new Set(settings.approvedChannels.map((channel) => channel.id));
-  const enabledApprovedIds = new Set(settings.approvedChannels.filter((channel) => channel.enabled !== false).map((channel) => channel.id));
+  const enabledChannels = settings.approvedChannels.filter((channel) => channel.enabled !== false);
+  const visibleChannels = selectedCategory === 'All'
+    ? enabledChannels
+    : enabledChannels.filter((channel) => (channel.category || 'Learning') === selectedCategory);
+  const enabledApprovedIds = new Set(enabledChannels.map((channel) => channel.id));
   const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) ? selectedVideo : null;
   const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
-  const filteredVideos = selectedCategory === 'All'
-    ? videos
-    : videos.filter((video) => categoryByChannelId.get(video.channelId) === selectedCategory);
+  const filteredVideos = videos.filter((video) => (
+    (selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory)
+    && (selectedChannelId === 'All' || video.channelId === selectedChannelId)
+  ));
+  const categoryFilteredVideos = videos.filter((video) => (
+    selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory
+  ));
 
   return (
     <main className="app-shell">
@@ -437,11 +449,41 @@ function App() {
           </div>
           <div className="category-filter" aria-label="Video categories">
             {['All', ...settings.categories].map((category) => (
-              <button className={selectedCategory === category ? 'active' : ''} key={category} onClick={() => setSelectedCategory(category)}>{category}</button>
+              <button
+                className={selectedCategory === category ? 'active' : ''}
+                key={category}
+                onClick={() => {
+                  setSelectedCategory(category);
+                  setSelectedChannelId('All');
+                }}
+              >
+                {category}
+              </button>
             ))}
           </div>
+          {visibleChannels.length > 0 && (
+            <div className="channel-tile-grid" aria-label="Approved channels">
+              <button className={`channel-tile ${selectedChannelId === 'All' ? 'active' : ''}`} onClick={() => setSelectedChannelId('All')}>
+                <span className="channel-avatar">All</span>
+                <strong>All Channels</strong>
+                <small>{categoryFilteredVideos.length} videos</small>
+              </button>
+              {visibleChannels.map((channel) => {
+                const videoCount = videos.filter((video) => video.channelId === channel.id).length;
+                return (
+                  <button className={`channel-tile ${selectedChannelId === channel.id ? 'active' : ''}`} key={channel.id} onClick={() => setSelectedChannelId(channel.id)}>
+                    {channel.thumbnail ? <img src={channel.thumbnail} alt="" /> : <span className="channel-avatar">{channel.title.slice(0, 2)}</span>}
+                    <strong>{channel.title}</strong>
+                    <small>{channel.category || 'Learning'} · {videoCount} videos</small>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="video-grid">
-            {filteredVideos.map((video) => (
+            {filteredVideos.length === 0 ? (
+              <div className="empty-list">No videos match this filter yet.</div>
+            ) : filteredVideos.map((video) => (
               <button className="video-card" key={video.id} onClick={() => setSelectedVideo(video)}>
                 {video.thumbnail && <img src={video.thumbnail} alt="" />}
                 <strong>{video.title}</strong>

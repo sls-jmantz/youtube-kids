@@ -12,6 +12,8 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 6. Parent Admin can be protected with a local 4-8 digit PIN.
 7. Approved channels have categories, notes, language, and enable/disable state.
 8. Settings can be exported and imported for backup without including the PIN hash or YouTube API key.
+9. Watch mode has large channel tiles and category filters for a simpler toddler-facing browsing flow.
+10. Approved channel feeds are cached locally and reused if a later RSS refresh fails.
 
 ## Run
 
@@ -42,6 +44,10 @@ Open Parent Admin and set a 4-8 digit PIN in the Parent PIN section. After that,
 ## Backups
 
 Use Parent Admin to export or import settings. Exports include approved channels, categories, notes, and the discovery blacklist. Exports do not include the parent PIN hash or YouTube API key.
+
+## Offline Behavior
+
+The app caches each approved channel RSS feed after a successful refresh. If YouTube RSS is temporarily unavailable later, Watch mode can fall back to the last cached feed for that channel.
 
 ## Safety Notes
 

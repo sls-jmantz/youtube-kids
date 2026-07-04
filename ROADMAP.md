@@ -4,15 +4,12 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 
 ## In Progress
 
-- Better child watch home with larger channel/category presentation.
-- Feed caching and offline-friendly startup behavior.
 - Clear loading, empty, and error states across network actions.
+- Per-video hide/unhide controls.
+- Local app log for troubleshooting feed/API failures.
 
 ## Next
 
-- Channel tiles for the child home screen.
-- Per-video hide/unhide controls.
-- Local app log for troubleshooting feed/API failures.
 - API quota and invalid-key diagnostics.
 - Settings backup history before destructive changes.
 - Import/export validation with readable error messages.
@@ -40,3 +37,6 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Richer approved-channel records with metadata and enable/disable state.
 - Parent backup/import/export controls.
 - Channel categories and Watch mode category filters.
+- Channel tiles for the child home screen.
+- Feed caching and offline-friendly startup behavior.
+- Improved Watch mode empty state for filtered results.
