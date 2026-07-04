@@ -29,7 +29,7 @@ Windows packaging is best run from Windows or a CI runner configured for Windows
 
 ## Approving Channels
 
-Manual approval works without an API key if you paste a YouTube channel ID that starts with `UC`. If you add a YouTube Data API key, manual approval can also resolve `@handles` and handle URLs.
+Manual approval works without an API key if you paste a YouTube channel ID that starts with `UC`. If you add a YouTube Data API key, manual approval can also resolve `@handles` and handle URLs. Bulk approval accepts one channel per line, including `Channel Name | UC...` or `Channel Name | @handle`.
 
 Discovery requires a YouTube Data API key. Add it in Parent Admin, then search for English channel candidates. Click `Review` to inspect recent uploads before approving the channel. Click `X` or `Blacklist` on a discovery result to hide it from future discovery searches.
 

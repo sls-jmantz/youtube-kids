@@ -13,7 +13,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -215,11 +216,32 @@ label {
   margin: 16px 0;
 }
 
-input {
+input,
+textarea {
   border: 2px solid #dde3ed;
   border-radius: 14px;
   padding: 12px 14px;
   width: 100%;
+}
+
+textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.bulk-box {
+  background: #f8fafc;
+  border-radius: 20px;
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 18px;
+}
+
+.bulk-box p {
+  color: #697386;
+  font-size: 14px;
+  margin-bottom: 0;
 }
 
 .settings-row,

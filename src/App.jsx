@@ -6,6 +6,8 @@ const emptySettings = {
   approvedChannels: [],
   blockedChannels: [],
   language: 'en',
+  pinHash: '',
+  pinSalt: '',
   region: 'US',
   youtubeApiKey: '',
 };
@@ -32,6 +34,17 @@ function normalizeChannelId(input) {
   return match ? match[1] : trimmed;
 }
 
+function parseBulkChannelLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split('|').map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return { id: trimmed, title: '' };
+  const firstLooksLikeChannel = /UC[a-zA-Z0-9_-]{20,}|@|youtube\.com|youtu\.be/.test(parts[0]);
+  return firstLooksLikeChannel
+    ? { id: parts[0], title: parts.slice(1).join(' | ') }
+    : { id: parts.slice(1).join(' | '), title: parts[0] };
+}
+
 function App() {
   const [settings, setSettings] = useState(emptySettings);
   const [videos, setVideos] = useState([]);
@@ -39,6 +52,7 @@ function App() {
   const [mode, setMode] = useState('watch');
   const [channelIdInput, setChannelIdInput] = useState('');
   const [channelTitleInput, setChannelTitleInput] = useState('');
+  const [bulkChannelInput, setBulkChannelInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('nursery rhymes');
   const [discoverResults, setDiscoverResults] = useState([]);
   const [reviewChannel, setReviewChannel] = useState(null);
@@ -131,23 +145,33 @@ function App() {
     setStatus('Parent Admin locked.');
   }
 
-  async function addChannel(channel) {
+  async function resolveChannelForApproval(channel) {
     let id = normalizeChannelId(channel.id);
     let title = channel.title?.trim() || channelTitleInput.trim() || id;
     if (!id.startsWith('UC')) {
       setStatus('Resolving channel handle...');
       const resolved = await window.appApi.resolveChannel({ input: channel.id, apiKey: settings.youtubeApiKey });
       if (resolved.needsApiKey) {
-        setStatus('Paste a UC channel ID, or add a YouTube Data API key to resolve @handles and channel names.');
-        return;
+        throw new Error('Paste a UC channel ID, or add a YouTube Data API key to resolve @handles and channel names.');
       }
       if (resolved.notFound || !resolved.id) {
-        setStatus('Could not find that channel. Try pasting the channel ID or exact @handle.');
-        return;
+        throw new Error('Could not find that channel. Try pasting the channel ID or exact @handle.');
       }
       id = resolved.id;
       title = channel.title?.trim() || channelTitleInput.trim() || resolved.title || id;
     }
+    return { id, title };
+  }
+
+  async function addChannel(channel) {
+    let resolvedChannel;
+    try {
+      resolvedChannel = await resolveChannelForApproval(channel);
+    } catch (error) {
+      setStatus(error.message);
+      return;
+    }
+    const { id, title } = resolvedChannel;
     if (settings.approvedChannels.some((approved) => approved.id === id)) {
       setStatus('That channel is already approved.');
       return;
@@ -165,6 +189,49 @@ function App() {
     setChannelIdInput('');
     setChannelTitleInput('');
     setStatus(`Approved ${title}`);
+  }
+
+  async function addBulkChannels() {
+    const candidates = bulkChannelInput.split('\n').map(parseBulkChannelLine).filter(Boolean);
+    if (candidates.length === 0) {
+      setStatus('Paste at least one channel to bulk approve.');
+      return;
+    }
+
+    const approvedIds = new Set(settings.approvedChannels.map((channel) => channel.id));
+    const nextApprovedChannels = [...settings.approvedChannels];
+    const nextBlockedChannels = [...settings.blockedChannels];
+    let added = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const candidate of candidates) {
+      try {
+        const { id, title } = await resolveChannelForApproval(candidate);
+        if (approvedIds.has(id)) {
+          skipped += 1;
+          continue;
+        }
+        approvedIds.add(id);
+        nextApprovedChannels.push({ id, title });
+        const blockedIndex = nextBlockedChannels.indexOf(id);
+        if (blockedIndex >= 0) nextBlockedChannels.splice(blockedIndex, 1);
+        added += 1;
+      } catch (_error) {
+        failed += 1;
+      }
+    }
+
+    if (added > 0) {
+      await saveSettings({
+        ...settings,
+        approvedChannels: nextApprovedChannels,
+        blockedChannels: nextBlockedChannels,
+      });
+      setDiscoverResults((results) => results.filter((result) => !approvedIds.has(result.id)));
+      setBulkChannelInput('');
+    }
+    setStatus(`Bulk approval complete: ${added} added, ${skipped} skipped, ${failed} failed.`);
   }
 
   async function removeChannel(channelId) {
@@ -328,6 +395,17 @@ function App() {
               <input value={channelTitleInput} onChange={(event) => setChannelTitleInput(event.target.value)} placeholder="Channel name" />
             </label>
             <button className="primary" onClick={() => addChannel({ id: channelIdInput, title: channelTitleInput })}>Approve Channel</button>
+            <div className="bulk-box">
+              <h3>Bulk Add Channels</h3>
+              <p>Paste one channel per line. Use `Channel Name | UC...` or `Channel Name | @handle` when you want a custom display name.</p>
+              <textarea
+                value={bulkChannelInput}
+                onChange={(event) => setBulkChannelInput(event.target.value)}
+                placeholder={'Bluey Official | @BlueyOfficialChannel\nUCxxxxxxxxxxxxxxxxxxxxxx\nyoutube.com/@SomeKidsChannel'}
+                rows={7}
+              />
+              <button className="primary" onClick={addBulkChannels}>Bulk Approve</button>
+            </div>
             <div className="manager-list">
               <h3>Current Approved List</h3>
               {settings.approvedChannels.length === 0 ? (
