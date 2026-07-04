@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('appApi', {
   readSettings: () => ipcRenderer.invoke('settings:read'),
   writeSettings: (settings) => ipcRenderer.invoke('settings:write', settings),
+  backupSettings: (reason) => ipcRenderer.invoke('settings:backup', reason),
   exportSettings: () => ipcRenderer.invoke('settings:export'),
   importSettings: () => ipcRenderer.invoke('settings:import'),
   readLog: () => ipcRenderer.invoke('log:read'),

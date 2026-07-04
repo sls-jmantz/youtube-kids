@@ -16,6 +16,8 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 10. Approved channel feeds are cached locally and reused if a later RSS refresh fails.
 11. Parent Admin can hide individual videos and restore them later.
 12. Feed and API failures are written to a local troubleshooting log.
+13. Imports are validated before applying, and destructive settings changes create local backup snapshots.
+14. YouTube API key/quota failures show parent-readable diagnostics.
 
 ## Run
 
@@ -47,6 +49,8 @@ Open Parent Admin and set a 4-8 digit PIN in the Parent PIN section. After that,
 
 Use Parent Admin to export or import settings. Exports include approved channels, categories, notes, and the discovery blacklist. Exports do not include the parent PIN hash or YouTube API key.
 
+The app keeps local backup snapshots before imports and destructive changes like removing channels or categories. These backups live in the app user-data directory under `settings-backups`.
+
 ## Offline Behavior
 
 The app caches each approved channel RSS feed after a successful refresh. If YouTube RSS is temporarily unavailable later, Watch mode can fall back to the last cached feed for that channel.
@@ -54,6 +58,8 @@ The app caches each approved channel RSS feed after a successful refresh. If You
 ## Hidden Videos And Logs
 
 Unlock Parent Admin to reveal `Hide` buttons in Watch mode. Hidden videos disappear from Watch mode until restored in Parent Admin. The Troubleshooting Log section shows recent feed/API failures from the local app log.
+
+YouTube API failures are translated into clearer parent-facing messages when possible, including invalid API key, denied API access, and quota exhaustion.
 
 ## Safety Notes
 

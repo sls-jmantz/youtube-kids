@@ -31,6 +31,10 @@ function logPath() {
   return path.join(app.getPath('userData'), 'app.log');
 }
 
+function backupDir() {
+  return path.join(app.getPath('userData'), 'settings-backups');
+}
+
 async function appendLog(level, message, details = {}) {
   try {
     const entry = JSON.stringify({
@@ -63,6 +67,22 @@ async function writeSettings(settings) {
   await fs.mkdir(path.dirname(settingsPath()), { recursive: true });
   await fs.writeFile(settingsPath(), JSON.stringify(nextSettings, null, 2));
   return nextSettings;
+}
+
+async function backupCurrentSettings(reason) {
+  try {
+    const raw = await fs.readFile(settingsPath(), 'utf8');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    await fs.mkdir(backupDir(), { recursive: true });
+    await fs.writeFile(path.join(backupDir(), `${stamp}-${reason}.json`), raw);
+    const backups = await fs.readdir(backupDir());
+    const jsonBackups = backups.filter((fileName) => fileName.endsWith('.json')).sort();
+    await Promise.all(jsonBackups.slice(0, Math.max(0, jsonBackups.length - 20)).map((fileName) => (
+      fs.unlink(path.join(backupDir(), fileName))
+    )));
+  } catch (error) {
+    if (error.code !== 'ENOENT') await appendLog('warn', 'Settings backup failed', { reason, error: error.message });
+  }
 }
 
 async function fetchChannelFeed(channelId) {
@@ -121,6 +141,52 @@ function migrateSettings(rawSettings = {}) {
     settings,
     needsWrite: rawSettings.schemaVersion !== settingsSchemaVersion,
   };
+}
+
+function validateImportSettings(rawSettings) {
+  if (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) {
+    throw new Error('Import file must be a JSON object.');
+  }
+  if (rawSettings.approvedChannels !== undefined && !Array.isArray(rawSettings.approvedChannels)) {
+    throw new Error('Import file has invalid approvedChannels. Expected an array.');
+  }
+  if (rawSettings.blockedChannels !== undefined && !Array.isArray(rawSettings.blockedChannels)) {
+    throw new Error('Import file has invalid blockedChannels. Expected an array.');
+  }
+  if (rawSettings.hiddenVideos !== undefined && !Array.isArray(rawSettings.hiddenVideos)) {
+    throw new Error('Import file has invalid hiddenVideos. Expected an array.');
+  }
+  if (rawSettings.categories !== undefined && !Array.isArray(rawSettings.categories)) {
+    throw new Error('Import file has invalid categories. Expected an array.');
+  }
+  if (Array.isArray(rawSettings.approvedChannels)) {
+    const invalidChannel = rawSettings.approvedChannels.find((channel) => (
+      !channel || typeof channel !== 'object' || typeof channel.id !== 'string' || !channel.id.trim().startsWith('UC')
+    ));
+    if (invalidChannel) throw new Error('Import file has an approved channel without a valid UC channel ID.');
+  }
+}
+
+async function youtubeErrorMessage(response, fallback) {
+  let reason = '';
+  let message = '';
+  try {
+    const data = await response.clone().json();
+    reason = data.error?.errors?.[0]?.reason || '';
+    message = data.error?.message || '';
+  } catch (_error) {
+    // Some failures are not JSON responses.
+  }
+  if (response.status === 403 && /quota/i.test(`${reason} ${message}`)) {
+    return 'YouTube API quota is exhausted. Try again tomorrow or use a different API key.';
+  }
+  if (response.status === 400 && /key|api/i.test(`${reason} ${message}`)) {
+    return 'The YouTube API key appears invalid. Check the key in Parent Admin.';
+  }
+  if (response.status === 403) {
+    return 'YouTube API access was denied. Check API key restrictions and YouTube Data API access.';
+  }
+  return `${fallback}: ${response.status}${message ? ` (${message})` : ''}`;
 }
 
 function exportableSettings(settings) {
@@ -232,6 +298,11 @@ app.whenReady().then(() => {
   ipcMain.handle('settings:read', readSettings);
   ipcMain.handle('settings:write', (_event, settings) => writeSettings(settings));
 
+  ipcMain.handle('settings:backup', async (_event, reason = 'manual') => {
+    await backupCurrentSettings(String(reason).replace(/[^a-z0-9-]/gi, '-').toLowerCase() || 'manual');
+    return { ok: true };
+  });
+
   ipcMain.handle('settings:export', async () => {
     const settings = await readSettings();
     const result = await dialog.showSaveDialog({
@@ -252,7 +323,13 @@ app.whenReady().then(() => {
     });
     if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
     const currentSettings = await readSettings();
-    const importedRaw = JSON.parse(await fs.readFile(result.filePaths[0], 'utf8'));
+    let importedRaw;
+    try {
+      importedRaw = JSON.parse(await fs.readFile(result.filePaths[0], 'utf8'));
+    } catch (_error) {
+      throw new Error('Import file is not valid JSON.');
+    }
+    validateImportSettings(importedRaw);
     const imported = migrateSettings({
       ...currentSettings,
       ...importedRaw,
@@ -260,6 +337,7 @@ app.whenReady().then(() => {
       pinSalt: currentSettings.pinSalt,
       youtubeApiKey: currentSettings.youtubeApiKey,
     }).settings;
+    await backupCurrentSettings('before-import');
     const saved = await writeSettings(imported);
     return { canceled: false, settings: saved, filePath: result.filePaths[0] };
   });
@@ -334,8 +412,9 @@ app.whenReady().then(() => {
     });
     const searchResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`);
     if (!searchResponse.ok) {
-      await appendLog('error', 'Channel lookup failed', { status: searchResponse.status });
-      throw new Error(`Channel lookup failed: ${searchResponse.status}`);
+      const message = await youtubeErrorMessage(searchResponse, 'Channel lookup failed');
+      await appendLog('error', 'Channel lookup failed', { status: searchResponse.status, message });
+      throw new Error(message);
     }
     const searchData = await searchResponse.json();
     const item = searchData.items?.[0];
@@ -358,8 +437,9 @@ app.whenReady().then(() => {
     });
     const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params.toString()}`);
     if (!response.ok) {
-      await appendLog('error', 'Discovery request failed', { status: response.status, query });
-      throw new Error(`Discovery request failed: ${response.status}`);
+      const message = await youtubeErrorMessage(response, 'Discovery request failed');
+      await appendLog('error', 'Discovery request failed', { status: response.status, query, message });
+      throw new Error(message);
     }
     const data = await response.json();
     const channelIds = (data.items || []).map((item) => item.id.channelId).filter(Boolean);
@@ -371,8 +451,9 @@ app.whenReady().then(() => {
     });
     const detailResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?${detailParams.toString()}`);
     if (!detailResponse.ok) {
-      await appendLog('error', 'Channel detail request failed', { status: detailResponse.status, channelIds });
-      throw new Error(`Channel detail request failed: ${detailResponse.status}`);
+      const message = await youtubeErrorMessage(detailResponse, 'Channel detail request failed');
+      await appendLog('error', 'Channel detail request failed', { status: detailResponse.status, channelIds, message });
+      throw new Error(message);
     }
     const detailData = await detailResponse.json();
     const detailsById = new Map((detailData.items || []).map((item) => [item.id, item]));

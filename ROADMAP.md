@@ -5,13 +5,11 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 ## In Progress
 
 - Clear loading, empty, and error states across network actions.
-- API quota and invalid-key diagnostics.
-- Settings backup history before destructive changes.
+- Better hidden-video details when a video is not in the current feed cache.
 
 ## Next
 
-- Import/export validation with readable error messages.
-- Better hidden-video details when a video is not in the current feed cache.
+- Export/import UI for choosing and restoring from automatic backup snapshots.
 
 ## Later
 
@@ -41,3 +39,6 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Improved Watch mode empty state for filtered results.
 - Per-video hide/unhide controls.
 - Local app log for troubleshooting feed/API failures.
+- API quota and invalid-key diagnostics.
+- Settings backup history before destructive changes.
+- Import validation with readable error messages.

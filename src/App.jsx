@@ -261,6 +261,7 @@ function App() {
   }
 
   async function removeChannel(channelId) {
+    await window.appApi.backupSettings('before-remove-channel');
     await saveSettings({
       ...settings,
       approvedChannels: settings.approvedChannels.filter((channel) => channel.id !== channelId),
@@ -294,6 +295,7 @@ function App() {
       setStatus('Keep at least one category.');
       return;
     }
+    await window.appApi.backupSettings('before-remove-category');
     const fallback = settings.categories.find((item) => item !== category) || 'Learning';
     await saveSettings({
       ...settings,
