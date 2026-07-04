@@ -1,0 +1,42 @@
+# Production Roadmap
+
+This tracks the work needed to make the app reliable for daily family use. Escape/kiosk prevention is intentionally out of scope for now.
+
+## In Progress
+
+- Better child watch home with larger channel/category presentation.
+- Feed caching and offline-friendly startup behavior.
+- Clear loading, empty, and error states across network actions.
+
+## Next
+
+- Channel tiles for the child home screen.
+- Per-video hide/unhide controls.
+- Local app log for troubleshooting feed/API failures.
+- API quota and invalid-key diagnostics.
+- Settings backup history before destructive changes.
+- Import/export validation with readable error messages.
+
+## Later
+
+- Individual video allowlist support.
+- Favorites and recently watched.
+- Optional daily time windows and simple viewing limits.
+- GitHub Actions release builds for Linux and Windows.
+- App icons and release metadata.
+- Unit tests for parsers, settings migrations, and allowlist behavior.
+- UI tests for PIN, approval, blacklist, review, and backup flows.
+
+## Done
+
+- Approved-channel-only watch mode.
+- Parent Admin mode.
+- Manual and bulk channel approval.
+- Discovery with English-focused filtering.
+- One-click discovery blacklist.
+- Discovery review panel with recent uploads.
+- Parent PIN gate for Admin mode.
+- Versioned settings schema and migration support.
+- Richer approved-channel records with metadata and enable/disable state.
+- Parent backup/import/export controls.
+- Channel categories and Watch mode category filters.

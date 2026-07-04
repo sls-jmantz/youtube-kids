@@ -14,6 +14,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -157,6 +158,27 @@ h3 {
   margin-top: 24px;
 }
 
+.category-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.category-filter button {
+  background: #ffffff;
+  border: 2px solid #edf0f5;
+  border-radius: 999px;
+  color: #172033;
+  font-weight: 900;
+  padding: 10px 16px;
+}
+
+.category-filter .active {
+  background: #ffcb45;
+  border-color: #ffcb45;
+}
+
 .video-card {
   background: #ffffff;
   border: 0;
@@ -217,6 +239,7 @@ label {
 }
 
 input,
+select,
 textarea {
   border: 2px solid #dde3ed;
   border-radius: 14px;
@@ -242,6 +265,35 @@ textarea {
   color: #697386;
   font-size: 14px;
   margin-bottom: 0;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag {
+  align-items: center;
+  background: #ffffff;
+  border: 2px solid #edf0f5;
+  border-radius: 999px;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  padding: 7px 9px 7px 12px;
+}
+
+.tag button {
+  background: #ffebe8;
+  border: 0;
+  border-radius: 999px;
+  color: #ad2518;
+  font-weight: 900;
+  height: 22px;
+  line-height: 1;
+  padding: 0;
+  width: 22px;
 }
 
 .settings-row,
@@ -335,10 +387,52 @@ textarea {
   padding: 12px;
 }
 
+.manager-row.disabled {
+  opacity: 0.62;
+}
+
 .manager-row div {
   display: grid;
   gap: 3px;
   min-width: 0;
+}
+
+.channel-editor {
+  align-items: flex-start;
+}
+
+.channel-editor-main {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.channel-editor-heading,
+.inline-toggle {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.inline-toggle {
+  font-size: 12px;
+  margin: 0;
+}
+
+.inline-toggle input {
+  width: auto;
+}
+
+.channel-editor-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 90px;
+}
+
+.channel-editor label {
+  font-size: 12px;
+  margin: 0;
 }
 
 .manager-row span {
@@ -358,6 +452,17 @@ textarea {
   border: 2px solid #ffe3a0;
   border-radius: 20px;
   padding: 18px;
+}
+
+.backup-list {
+  background: #f8fafc;
+  border-radius: 20px;
+  padding: 18px;
+}
+
+.backup-list p {
+  color: #697386;
+  font-size: 14px;
 }
 
 .review-panel {

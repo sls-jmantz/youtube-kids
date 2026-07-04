@@ -10,6 +10,8 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 4. Playback uses `youtube-nocookie.com` embeds, not open YouTube browsing.
 5. Discovery results can be reviewed with recent uploads before approval, or blacklisted with the `X` button so low-quality channels stop appearing.
 6. Parent Admin can be protected with a local 4-8 digit PIN.
+7. Approved channels have categories, notes, language, and enable/disable state.
+8. Settings can be exported and imported for backup without including the PIN hash or YouTube API key.
 
 ## Run
 
@@ -36,6 +38,10 @@ Discovery requires a YouTube Data API key. Add it in Parent Admin, then search f
 ## Parent PIN
 
 Open Parent Admin and set a 4-8 digit PIN in the Parent PIN section. After that, Parent Admin requires the PIN until it is unlocked. Use `Lock Admin` before handing the app back to a child.
+
+## Backups
+
+Use Parent Admin to export or import settings. Exports include approved channels, categories, notes, and the discovery blacklist. Exports do not include the parent PIN hash or YouTube API key.
 
 ## Safety Notes
 

@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const emptySettings = {
+  schemaVersion: 2,
   approvedChannels: [],
   blockedChannels: [],
+  categories: ['Learning', 'Music', 'Shows', 'Calm'],
   language: 'en',
   pinHash: '',
   pinSalt: '',
@@ -45,14 +47,31 @@ function parseBulkChannelLine(line) {
     : { id: parts.slice(1).join(' | '), title: parts[0] };
 }
 
+function createApprovedChannel(channel, fallbackTitle = '') {
+  const now = new Date().toISOString();
+  return {
+    id: channel.id,
+    title: channel.title || fallbackTitle || channel.id,
+    thumbnail: channel.thumbnail || '',
+    language: channel.language || 'en',
+    category: channel.category || 'Learning',
+    notes: channel.notes || '',
+    enabled: channel.enabled !== false,
+    approvedAt: channel.approvedAt || now,
+    lastReviewedAt: channel.lastReviewedAt || '',
+  };
+}
+
 function App() {
   const [settings, setSettings] = useState(emptySettings);
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [mode, setMode] = useState('watch');
   const [channelIdInput, setChannelIdInput] = useState('');
   const [channelTitleInput, setChannelTitleInput] = useState('');
   const [bulkChannelInput, setBulkChannelInput] = useState('');
+  const [categoryInput, setCategoryInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('nursery rhymes');
   const [discoverResults, setDiscoverResults] = useState([]);
   const [reviewChannel, setReviewChannel] = useState(null);
@@ -72,14 +91,15 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     async function loadVideos() {
-      if (!settings.approvedChannels.length) {
+      const enabledChannels = settings.approvedChannels.filter((channel) => channel.enabled !== false);
+      if (!enabledChannels.length) {
         setVideos([]);
         setSelectedVideo(null);
         return;
       }
       setStatus('Loading approved channel videos...');
       try {
-        const feeds = await Promise.all(settings.approvedChannels.map(async (channel) => {
+        const feeds = await Promise.all(enabledChannels.map(async (channel) => {
           const xml = await window.appApi.fetchChannelFeed(channel.id);
           return parseFeed(xml, channel);
         }));
@@ -178,7 +198,7 @@ function App() {
     }
     await saveSettings({
       ...settings,
-      approvedChannels: [...settings.approvedChannels, { id, title }],
+      approvedChannels: [...settings.approvedChannels, createApprovedChannel({ ...channel, id, title })],
       blockedChannels: settings.blockedChannels.filter((blockedId) => blockedId !== id),
     });
     setDiscoverResults((results) => results.filter((result) => result.id !== id));
@@ -213,7 +233,7 @@ function App() {
           continue;
         }
         approvedIds.add(id);
-        nextApprovedChannels.push({ id, title });
+        nextApprovedChannels.push(createApprovedChannel({ ...candidate, id, title }));
         const blockedIndex = nextBlockedChannels.indexOf(id);
         if (blockedIndex >= 0) nextBlockedChannels.splice(blockedIndex, 1);
         added += 1;
@@ -240,6 +260,67 @@ function App() {
       approvedChannels: settings.approvedChannels.filter((channel) => channel.id !== channelId),
     });
     setStatus('Channel removed.');
+  }
+
+  async function updateApprovedChannel(channelId, updates) {
+    await saveSettings({
+      ...settings,
+      approvedChannels: settings.approvedChannels.map((channel) => (
+        channel.id === channelId ? { ...channel, ...updates } : channel
+      )),
+    });
+  }
+
+  async function addCategory() {
+    const category = categoryInput.trim();
+    if (!category) return;
+    if (settings.categories.includes(category)) {
+      setStatus('That category already exists.');
+      return;
+    }
+    await saveSettings({ ...settings, categories: [...settings.categories, category] });
+    setCategoryInput('');
+    setStatus(`Added category ${category}.`);
+  }
+
+  async function removeCategory(category) {
+    if (settings.categories.length <= 1) {
+      setStatus('Keep at least one category.');
+      return;
+    }
+    const fallback = settings.categories.find((item) => item !== category) || 'Learning';
+    await saveSettings({
+      ...settings,
+      categories: settings.categories.filter((item) => item !== category),
+      approvedChannels: settings.approvedChannels.map((channel) => (
+        channel.category === category ? { ...channel, category: fallback } : channel
+      )),
+    });
+    if (selectedCategory === category) setSelectedCategory('All');
+    setStatus(`Removed category ${category}.`);
+  }
+
+  async function exportSettings() {
+    try {
+      const result = await window.appApi.exportSettings();
+      if (!result.canceled) setStatus(`Settings exported to ${result.filePath}`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
+  async function importSettings() {
+    try {
+      const result = await window.appApi.importSettings();
+      if (result.canceled) return;
+      setSettings(result.settings);
+      setDiscoverResults([]);
+      setReviewChannel(null);
+      setReviewVideos([]);
+      setStatus(`Settings imported from ${result.filePath}`);
+    } catch (error) {
+      setStatus(error.message);
+    }
   }
 
   async function blockChannel(channel) {
@@ -307,7 +388,12 @@ function App() {
   }
 
   const approvedIds = new Set(settings.approvedChannels.map((channel) => channel.id));
-  const playableVideo = selectedVideo && approvedIds.has(selectedVideo.channelId) ? selectedVideo : null;
+  const enabledApprovedIds = new Set(settings.approvedChannels.filter((channel) => channel.enabled !== false).map((channel) => channel.id));
+  const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) ? selectedVideo : null;
+  const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
+  const filteredVideos = selectedCategory === 'All'
+    ? videos
+    : videos.filter((video) => categoryByChannelId.get(video.channelId) === selectedCategory);
 
   return (
     <main className="app-shell">
@@ -349,12 +435,17 @@ function App() {
               <div className="empty-player">Approve a channel to start watching.</div>
             )}
           </div>
+          <div className="category-filter" aria-label="Video categories">
+            {['All', ...settings.categories].map((category) => (
+              <button className={selectedCategory === category ? 'active' : ''} key={category} onClick={() => setSelectedCategory(category)}>{category}</button>
+            ))}
+          </div>
           <div className="video-grid">
-            {videos.map((video) => (
+            {filteredVideos.map((video) => (
               <button className="video-card" key={video.id} onClick={() => setSelectedVideo(video)}>
                 {video.thumbnail && <img src={video.thumbnail} alt="" />}
                 <strong>{video.title}</strong>
-                <span>{video.channelTitle}</span>
+                <span>{video.channelTitle} · {categoryByChannelId.get(video.channelId) || 'Learning'}</span>
               </button>
             ))}
           </div>
@@ -406,15 +497,65 @@ function App() {
               />
               <button className="primary" onClick={addBulkChannels}>Bulk Approve</button>
             </div>
+            <div className="bulk-box">
+              <h3>Categories</h3>
+              <p>Categories will drive the kid-friendly home screen and filters.</p>
+              <div className="search-row">
+                <input value={categoryInput} onChange={(event) => setCategoryInput(event.target.value)} placeholder="New category" />
+                <button className="primary" onClick={addCategory}>Add</button>
+              </div>
+              <div className="tag-list">
+                {settings.categories.map((category) => (
+                  <span className="tag" key={category}>{category}<button onClick={() => removeCategory(category)}>x</button></span>
+                ))}
+              </div>
+            </div>
             <div className="manager-list">
-              <h3>Current Approved List</h3>
+              <h3>Current Approved List ({settings.approvedChannels.length})</h3>
               {settings.approvedChannels.length === 0 ? (
                 <p>No approved channels yet.</p>
               ) : settings.approvedChannels.map((channel) => (
-                <div className="manager-row" key={channel.id}>
-                  <div>
-                    <strong>{channel.title}</strong>
+                <div className={`manager-row channel-editor ${channel.enabled === false ? 'disabled' : ''}`} key={channel.id}>
+                  <div className="channel-editor-main">
+                    <div className="channel-editor-heading">
+                      <strong>{channel.title}</strong>
+                      <label className="inline-toggle">
+                        <input
+                          type="checkbox"
+                          checked={channel.enabled !== false}
+                          onChange={(event) => updateApprovedChannel(channel.id, { enabled: event.target.checked })}
+                        />
+                        Enabled
+                      </label>
+                    </div>
                     <span>{channel.id}</span>
+                    <div className="channel-editor-grid">
+                      <label>
+                        Category
+                        <select
+                          value={channel.category || 'Learning'}
+                          onChange={(event) => updateApprovedChannel(channel.id, { category: event.target.value })}
+                        >
+                          {settings.categories.map((category) => <option key={category} value={category}>{category}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        Language
+                        <input
+                          value={channel.language || 'en'}
+                          onChange={(event) => updateApprovedChannel(channel.id, { language: event.target.value || 'en' })}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Parent Notes
+                      <input
+                        value={channel.notes || ''}
+                        onChange={(event) => updateApprovedChannel(channel.id, { notes: event.target.value })}
+                        placeholder="Why this channel is approved"
+                      />
+                    </label>
+                    <span>Approved {channel.approvedAt ? new Date(channel.approvedAt).toLocaleDateString() : 'unknown date'}</span>
                   </div>
                   <button onClick={() => removeChannel(channel.id)}>Remove</button>
                 </div>
@@ -510,6 +651,14 @@ function App() {
                 />
               </label>
               <button className="primary" onClick={setParentPin}>{settings.pinHash ? 'Change PIN' : 'Set PIN'}</button>
+            </div>
+            <div className="manager-list backup-list">
+              <h3>Backup And Restore</h3>
+              <p>Export approved channels, blacklist, categories, and notes. PIN and YouTube API key are not included in exports.</p>
+              <div className="card-actions">
+                <button className="primary" onClick={exportSettings}>Export Settings</button>
+                <button className="quiet-button" onClick={importSettings}>Import Settings</button>
+              </div>
             </div>
           </div>
         </section>

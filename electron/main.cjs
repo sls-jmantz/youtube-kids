@@ -1,13 +1,16 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const isDev = !app.isPackaged;
+const settingsSchemaVersion = 2;
 
 const defaultSettings = {
+  schemaVersion: settingsSchemaVersion,
   approvedChannels: [],
   blockedChannels: [],
+  categories: ['Learning', 'Music', 'Shows', 'Calm'],
   language: 'en',
   pinHash: '',
   pinSalt: '',
@@ -22,7 +25,9 @@ function settingsPath() {
 async function readSettings() {
   try {
     const raw = await fs.readFile(settingsPath(), 'utf8');
-    return { ...defaultSettings, ...JSON.parse(raw) };
+    const migrated = migrateSettings(JSON.parse(raw));
+    if (migrated.needsWrite) await writeSettings(migrated.settings);
+    return migrated.settings;
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
     return defaultSettings;
@@ -30,10 +35,53 @@ async function readSettings() {
 }
 
 async function writeSettings(settings) {
-  const nextSettings = { ...defaultSettings, ...settings };
+  const nextSettings = migrateSettings(settings).settings;
   await fs.mkdir(path.dirname(settingsPath()), { recursive: true });
   await fs.writeFile(settingsPath(), JSON.stringify(nextSettings, null, 2));
   return nextSettings;
+}
+
+function normalizeApprovedChannel(channel) {
+  const now = new Date().toISOString();
+  const id = String(channel?.id || '').trim();
+  const title = String(channel?.title || id).trim();
+  return {
+    id,
+    title,
+    thumbnail: channel?.thumbnail || '',
+    language: channel?.language || 'en',
+    category: channel?.category || 'Learning',
+    notes: channel?.notes || '',
+    enabled: channel?.enabled !== false,
+    approvedAt: channel?.approvedAt || now,
+    lastReviewedAt: channel?.lastReviewedAt || '',
+  };
+}
+
+function migrateSettings(rawSettings = {}) {
+  const settings = { ...defaultSettings, ...rawSettings };
+  settings.schemaVersion = settingsSchemaVersion;
+  settings.approvedChannels = Array.isArray(settings.approvedChannels)
+    ? settings.approvedChannels.map(normalizeApprovedChannel).filter((channel) => channel.id)
+    : [];
+  settings.blockedChannels = Array.isArray(settings.blockedChannels)
+    ? [...new Set(settings.blockedChannels.map((id) => String(id).trim()).filter(Boolean))]
+    : [];
+  settings.categories = Array.isArray(settings.categories) && settings.categories.length > 0
+    ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
+    : defaultSettings.categories;
+  return {
+    settings,
+    needsWrite: rawSettings.schemaVersion !== settingsSchemaVersion,
+  };
+}
+
+function exportableSettings(settings) {
+  const { pinHash, pinSalt, youtubeApiKey, ...safeSettings } = settings;
+  return {
+    ...safeSettings,
+    exportedAt: new Date().toISOString(),
+  };
 }
 
 function isLikelySelectedLanguage(channel, language) {
@@ -136,6 +184,38 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle('settings:read', readSettings);
   ipcMain.handle('settings:write', (_event, settings) => writeSettings(settings));
+
+  ipcMain.handle('settings:export', async () => {
+    const settings = await readSettings();
+    const result = await dialog.showSaveDialog({
+      title: 'Export Approved Tube Kids Settings',
+      defaultPath: `approved-tube-kids-settings-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON Settings', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    await fs.writeFile(result.filePath, JSON.stringify(exportableSettings(settings), null, 2));
+    return { canceled: false, filePath: result.filePath };
+  });
+
+  ipcMain.handle('settings:import', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import Approved Tube Kids Settings',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON Settings', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+    const currentSettings = await readSettings();
+    const importedRaw = JSON.parse(await fs.readFile(result.filePaths[0], 'utf8'));
+    const imported = migrateSettings({
+      ...currentSettings,
+      ...importedRaw,
+      pinHash: currentSettings.pinHash,
+      pinSalt: currentSettings.pinSalt,
+      youtubeApiKey: currentSettings.youtubeApiKey,
+    }).settings;
+    const saved = await writeSettings(imported);
+    return { canceled: false, settings: saved, filePath: result.filePaths[0] };
+  });
 
   ipcMain.handle('pin:set', async (_event, pin) => {
     const normalizedPin = String(pin || '').trim();
