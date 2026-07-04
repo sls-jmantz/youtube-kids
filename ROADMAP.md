@@ -5,7 +5,6 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 ## In Progress
 
 - Clear loading, empty, and error states across network actions.
-- Individual video allowlist support.
 
 ## Next
 
@@ -42,3 +41,4 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Better hidden-video details when a video is not in the current feed cache.
 - Favorites and recently watched.
 - Optional daily time windows and simple viewing limits.
+- Individual video allowlist support.

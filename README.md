@@ -1,6 +1,6 @@
 # Approved Tube Kids
 
-A Windows/Linux Electron app for watching only manually approved YouTube channels.
+A Windows/Linux Electron app for watching only manually approved YouTube channels and videos.
 
 ## MVP Plan
 
@@ -22,6 +22,7 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 16. Hidden videos keep title/channel/thumbnail metadata for easier restoration.
 17. Watch mode supports Favorites and Recently Watched quick filters.
 18. Parent Admin can configure daily viewing minutes and quiet hours.
+19. Parent Admin can approve individual videos without approving the whole channel.
 
 ## Run
 
@@ -44,6 +45,10 @@ Windows packaging is best run from Windows or a CI runner configured for Windows
 Manual approval works without an API key if you paste a YouTube channel ID that starts with `UC`. If you add a YouTube Data API key, manual approval can also resolve `@handles` and handle URLs. Bulk approval accepts one channel per line, including `Channel Name | UC...` or `Channel Name | @handle`.
 
 Discovery requires a YouTube Data API key. Add it in Parent Admin, then search for English channel candidates. Click `Review` to inspect recent uploads before approving the channel. Click `X` or `Blacklist` on a discovery result to hide it from future discovery searches.
+
+## Approving Videos
+
+Parent Admin can approve one specific video by YouTube URL or 11-character video ID. This adds the video to Watch mode without approving the rest of that video's channel.
 
 ## Parent PIN
 
@@ -79,4 +84,4 @@ Parent Admin includes simple viewing limits. When enabled, the app counts one mi
 
 ## Safety Notes
 
-This app avoids general browsing and only builds video lists from approved channel IDs. The Electron shell blocks top-level navigation away from the app, denies browser permission prompts, and limits iframe navigation to YouTube embed domains. The embedded YouTube player is still a YouTube-controlled iframe, so future hardening should continue reducing player escape paths.
+This app avoids general browsing and only builds video lists from approved channel IDs and approved individual video IDs. The Electron shell blocks top-level navigation away from the app, denies browser permission prompts, and limits iframe navigation to YouTube embed domains. The embedded YouTube player is still a YouTube-controlled iframe, so future hardening should continue reducing player escape paths.

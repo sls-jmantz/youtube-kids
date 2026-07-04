@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const emptySettings = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   approvedChannels: [],
+  approvedVideoDetails: {},
+  approvedVideos: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
   favoriteVideoDetails: {},
@@ -76,6 +78,12 @@ function normalizeChannelId(input) {
   return match ? match[1] : trimmed;
 }
 
+function normalizeVideoId(input) {
+  const trimmed = input.trim();
+  const match = trimmed.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/) || trimmed.match(/^([a-zA-Z0-9_-]{11})$/);
+  return match ? match[1] : '';
+}
+
 function parseBulkChannelLine(line) {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -113,6 +121,19 @@ function videoSnapshot(video, dateField) {
   };
 }
 
+function approvedVideoFromInput({ id, title, channelTitle, category }) {
+  const videoId = normalizeVideoId(id);
+  return {
+    id: videoId,
+    title: title.trim() || videoId,
+    channelTitle: channelTitle.trim() || 'Approved Video',
+    channelId: '',
+    thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+    category: category || 'Learning',
+    approvedAt: new Date().toISOString(),
+  };
+}
+
 function App() {
   const [settings, setSettings] = useState(emptySettings);
   const [videos, setVideos] = useState([]);
@@ -124,6 +145,10 @@ function App() {
   const [channelIdInput, setChannelIdInput] = useState('');
   const [channelTitleInput, setChannelTitleInput] = useState('');
   const [bulkChannelInput, setBulkChannelInput] = useState('');
+  const [videoIdInput, setVideoIdInput] = useState('');
+  const [videoTitleInput, setVideoTitleInput] = useState('');
+  const [videoChannelInput, setVideoChannelInput] = useState('');
+  const [videoCategoryInput, setVideoCategoryInput] = useState('Learning');
   const [categoryInput, setCategoryInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('nursery rhymes');
   const [discoverResults, setDiscoverResults] = useState([]);
@@ -363,6 +388,49 @@ function App() {
     setStatus(`Added category ${category}.`);
   }
 
+  async function addApprovedVideo() {
+    const videoId = normalizeVideoId(videoIdInput);
+    if (!videoId) {
+      setStatus('Paste a YouTube video URL or 11-character video ID.');
+      return;
+    }
+    if (settings.approvedVideos.includes(videoId)) {
+      setStatus('That video is already approved.');
+      return;
+    }
+    const video = approvedVideoFromInput({
+      id: videoId,
+      title: videoTitleInput,
+      channelTitle: videoChannelInput,
+      category: videoCategoryInput,
+    });
+    await saveSettings({
+      ...settings,
+      approvedVideos: [...settings.approvedVideos, videoId],
+      approvedVideoDetails: {
+        ...settings.approvedVideoDetails,
+        [videoId]: video,
+      },
+      hiddenVideos: settings.hiddenVideos.filter((hiddenId) => hiddenId !== videoId),
+    });
+    setVideoIdInput('');
+    setVideoTitleInput('');
+    setVideoChannelInput('');
+    setStatus(`Approved video ${video.title}.`);
+  }
+
+  async function removeApprovedVideo(videoId) {
+    await window.appApi.backupSettings('before-remove-approved-video');
+    const { [videoId]: _removed, ...nextApprovedVideoDetails } = settings.approvedVideoDetails;
+    await saveSettings({
+      ...settings,
+      approvedVideos: settings.approvedVideos.filter((approvedId) => approvedId !== videoId),
+      approvedVideoDetails: nextApprovedVideoDetails,
+    });
+    setSelectedVideo((current) => current?.id === videoId ? null : current);
+    setStatus('Approved video removed.');
+  }
+
   async function removeCategory(category) {
     if (settings.categories.length <= 1) {
       setStatus('Keep at least one category.');
@@ -376,6 +444,10 @@ function App() {
       approvedChannels: settings.approvedChannels.map((channel) => (
         channel.category === category ? { ...channel, category: fallback } : channel
       )),
+      approvedVideoDetails: Object.fromEntries(Object.entries(settings.approvedVideoDetails).map(([videoId, video]) => [videoId, {
+        ...video,
+        category: video.category === category ? fallback : video.category,
+      }])),
     });
     if (selectedCategory === category) setSelectedCategory('All');
     setStatus(`Removed category ${category}.`);
@@ -576,25 +648,40 @@ function App() {
     ? enabledChannels
     : enabledChannels.filter((channel) => (channel.category || 'Learning') === selectedCategory);
   const enabledApprovedIds = new Set(enabledChannels.map((channel) => channel.id));
+  const approvedVideoIds = new Set(settings.approvedVideos);
   const hiddenVideoIds = new Set(settings.hiddenVideos);
   const favoriteVideoIds = new Set(settings.favoriteVideos);
-  const visibleVideos = videos.filter((video) => !hiddenVideoIds.has(video.id));
-  const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) && !hiddenVideoIds.has(selectedVideo.id) && !currentViewingStatus.blocked ? selectedVideo : null;
+  const approvedStandaloneVideos = settings.approvedVideos.map((videoId) => ({
+    id: videoId,
+    title: settings.approvedVideoDetails[videoId]?.title || videoId,
+    channelTitle: settings.approvedVideoDetails[videoId]?.channelTitle || 'Approved Video',
+    channelId: settings.approvedVideoDetails[videoId]?.channelId || '',
+    thumbnail: settings.approvedVideoDetails[videoId]?.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+    category: settings.approvedVideoDetails[videoId]?.category || 'Learning',
+    approvedAt: settings.approvedVideoDetails[videoId]?.approvedAt || '',
+    standaloneApproved: true,
+  }));
+  const feedVideoIds = new Set(videos.map((video) => video.id));
+  const allVideos = [...videos, ...approvedStandaloneVideos.filter((video) => !feedVideoIds.has(video.id))];
+  const visibleVideos = allVideos.filter((video) => !hiddenVideoIds.has(video.id));
+  const canPlaySelectedVideo = selectedVideo && (enabledApprovedIds.has(selectedVideo.channelId) || approvedVideoIds.has(selectedVideo.id));
+  const playableVideo = canPlaySelectedVideo && !hiddenVideoIds.has(selectedVideo.id) && !currentViewingStatus.blocked ? selectedVideo : null;
   const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
+  const categoryForVideo = (video) => video.category || categoryByChannelId.get(video.channelId) || 'Learning';
   const quickFilteredVideos = visibleVideos.filter((video) => {
     if (quickFilter === 'Favorites') return favoriteVideoIds.has(video.id);
     if (quickFilter === 'Recent') return settings.recentlyWatched.some((item) => item.id === video.id);
     return true;
   });
   const filteredVideos = quickFilteredVideos.filter((video) => (
-    (selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory)
+    (selectedCategory === 'All' || categoryForVideo(video) === selectedCategory)
     && (selectedChannelId === 'All' || video.channelId === selectedChannelId)
   ));
   const categoryFilteredVideos = quickFilteredVideos.filter((video) => (
-    selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory
+    selectedCategory === 'All' || categoryForVideo(video) === selectedCategory
   ));
   const hiddenVideoDetails = settings.hiddenVideos.map((videoId) => (
-    videos.find((video) => video.id === videoId) || settings.hiddenVideoDetails[videoId] || { id: videoId, title: videoId, channelTitle: 'Unknown channel' }
+    allVideos.find((video) => video.id === videoId) || settings.hiddenVideoDetails[videoId] || { id: videoId, title: videoId, channelTitle: 'Unknown channel' }
   ));
 
   return (
@@ -639,7 +726,7 @@ function App() {
                 <span>{currentViewingStatus.usedToday} of {settings.viewingLimits.dailyMinutes} minutes used today.</span>
               </div>
             ) : (
-              <div className="empty-player">Approve a channel to start watching.</div>
+              <div className="empty-player">Approve a channel or video to start watching.</div>
             )}
           </div>
           {settings.viewingLimits.enabled && (
@@ -702,7 +789,7 @@ function App() {
                 <button className="video-play-button" onClick={() => playVideo(video)}>
                   {video.thumbnail && <img src={video.thumbnail} alt="" />}
                   <strong>{video.title}</strong>
-                  <span>{video.channelTitle} · {categoryByChannelId.get(video.channelId) || 'Learning'}</span>
+                  <span>{video.channelTitle} · {categoryForVideo(video)}</span>
                 </button>
                 <div className="video-card-actions">
                   <button className="favorite-video-button" onClick={() => toggleFavorite(video)}>{favoriteVideoIds.has(video.id) ? 'Favorited' : 'Favorite'}</button>
@@ -772,6 +859,31 @@ function App() {
                 ))}
               </div>
             </div>
+            <div className="bulk-box approved-video-box">
+              <h3>Approve Individual Video</h3>
+              <p>Use this for a specific video without approving the whole channel. Paste a YouTube URL or 11-character video ID.</p>
+              <label>
+                Video URL or ID
+                <input value={videoIdInput} onChange={(event) => setVideoIdInput(event.target.value)} placeholder="https://www.youtube.com/watch?v=..." />
+              </label>
+              <label>
+                Display Title
+                <input value={videoTitleInput} onChange={(event) => setVideoTitleInput(event.target.value)} placeholder="Optional, shown in Watch mode" />
+              </label>
+              <div className="settings-row">
+                <label>
+                  Channel Name
+                  <input value={videoChannelInput} onChange={(event) => setVideoChannelInput(event.target.value)} placeholder="Optional" />
+                </label>
+                <label>
+                  Category
+                  <select value={videoCategoryInput} onChange={(event) => setVideoCategoryInput(event.target.value)}>
+                    {settings.categories.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </label>
+              </div>
+              <button className="primary" onClick={addApprovedVideo}>Approve Video</button>
+            </div>
             <div className="manager-list">
               <h3>Current Approved List ({settings.approvedChannels.length})</h3>
               {settings.approvedChannels.length === 0 ? (
@@ -822,6 +934,24 @@ function App() {
                   <button onClick={() => removeChannel(channel.id)}>Remove</button>
                 </div>
               ))}
+            </div>
+            <div className="manager-list approved-video-list">
+              <h3>Approved Videos ({settings.approvedVideos.length})</h3>
+              {settings.approvedVideos.length === 0 ? (
+                <p>No individual videos approved yet.</p>
+              ) : settings.approvedVideos.map((videoId) => {
+                const video = settings.approvedVideoDetails[videoId] || { id: videoId, title: videoId, channelTitle: 'Approved Video' };
+                return (
+                  <div className="manager-row" key={videoId}>
+                    {video.thumbnail && <img className="row-thumbnail" src={video.thumbnail} alt="" />}
+                    <div>
+                      <strong>{video.title}</strong>
+                      <span>{video.channelTitle} · {video.category || 'Learning'} · {videoId}</span>
+                    </div>
+                    <button onClick={() => removeApprovedVideo(videoId)}>Remove</button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

@@ -4,11 +4,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const isDev = !app.isPackaged;
-const settingsSchemaVersion = 6;
+const settingsSchemaVersion = 7;
 
 const defaultSettings = {
   schemaVersion: settingsSchemaVersion,
   approvedChannels: [],
+  approvedVideoDetails: {},
+  approvedVideos: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
   favoriteVideoDetails: {},
@@ -176,6 +178,9 @@ function migrateSettings(rawSettings = {}) {
   settings.approvedChannels = Array.isArray(settings.approvedChannels)
     ? settings.approvedChannels.map(normalizeApprovedChannel).filter((channel) => channel.id)
     : [];
+  settings.approvedVideos = Array.isArray(settings.approvedVideos)
+    ? [...new Set(settings.approvedVideos.map((id) => String(id).trim()).filter(Boolean))]
+    : [];
   settings.blockedChannels = Array.isArray(settings.blockedChannels)
     ? [...new Set(settings.blockedChannels.map((id) => String(id).trim()).filter(Boolean))]
     : [];
@@ -198,6 +203,9 @@ function migrateSettings(rawSettings = {}) {
   settings.favoriteVideoDetails = settings.favoriteVideoDetails && typeof settings.favoriteVideoDetails === 'object' && !Array.isArray(settings.favoriteVideoDetails)
     ? settings.favoriteVideoDetails
     : {};
+  settings.approvedVideoDetails = settings.approvedVideoDetails && typeof settings.approvedVideoDetails === 'object' && !Array.isArray(settings.approvedVideoDetails)
+    ? settings.approvedVideoDetails
+    : {};
   settings.hiddenVideoDetails = Object.fromEntries(Object.entries(settings.hiddenVideoDetails).filter(([videoId, video]) => (
     settings.hiddenVideos.includes(videoId) && video && typeof video === 'object'
   )).map(([videoId, video]) => [videoId, {
@@ -211,6 +219,7 @@ function migrateSettings(rawSettings = {}) {
   settings.categories = Array.isArray(settings.categories) && settings.categories.length > 0
     ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
     : defaultSettings.categories;
+  settings.approvedVideoDetails = normalizeVideoDetails(settings.approvedVideos, settings.approvedVideoDetails, 'approvedAt');
   settings.favoriteVideoDetails = normalizeVideoDetails(settings.favoriteVideos, settings.favoriteVideoDetails, 'favoritedAt');
   settings.recentlyWatched = settings.recentlyWatched.map((video) => normalizeVideoDetail(video.id, video, 'watchedAt'));
   return {
@@ -226,6 +235,7 @@ function normalizeVideoDetail(videoId, video, dateField) {
     channelTitle: String(video.channelTitle || 'Unknown channel'),
     channelId: String(video.channelId || ''),
     thumbnail: String(video.thumbnail || ''),
+    category: String(video.category || 'Learning'),
     [dateField]: String(video[dateField] || ''),
   };
 }
@@ -254,6 +264,12 @@ function validateImportSettings(rawSettings) {
   }
   if (rawSettings.approvedChannels !== undefined && !Array.isArray(rawSettings.approvedChannels)) {
     throw new Error('Import file has invalid approvedChannels. Expected an array.');
+  }
+  if (rawSettings.approvedVideos !== undefined && !Array.isArray(rawSettings.approvedVideos)) {
+    throw new Error('Import file has invalid approvedVideos. Expected an array.');
+  }
+  if (rawSettings.approvedVideoDetails !== undefined && (!rawSettings.approvedVideoDetails || typeof rawSettings.approvedVideoDetails !== 'object' || Array.isArray(rawSettings.approvedVideoDetails))) {
+    throw new Error('Import file has invalid approvedVideoDetails. Expected an object.');
   }
   if (rawSettings.blockedChannels !== undefined && !Array.isArray(rawSettings.blockedChannels)) {
     throw new Error('Import file has invalid blockedChannels. Expected an array.');
