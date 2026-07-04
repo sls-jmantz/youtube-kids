@@ -5,14 +5,13 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 ## In Progress
 
 - Clear loading, empty, and error states across network actions.
-- Per-video hide/unhide controls.
-- Local app log for troubleshooting feed/API failures.
+- API quota and invalid-key diagnostics.
+- Settings backup history before destructive changes.
 
 ## Next
 
-- API quota and invalid-key diagnostics.
-- Settings backup history before destructive changes.
 - Import/export validation with readable error messages.
+- Better hidden-video details when a video is not in the current feed cache.
 
 ## Later
 
@@ -40,3 +39,5 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Channel tiles for the child home screen.
 - Feed caching and offline-friendly startup behavior.
 - Improved Watch mode empty state for filtered results.
+- Per-video hide/unhide controls.
+- Local app log for troubleshooting feed/API failures.

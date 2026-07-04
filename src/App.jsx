@@ -7,6 +7,7 @@ const emptySettings = {
   approvedChannels: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
+  hiddenVideos: [],
   language: 'en',
   pinHash: '',
   pinSalt: '',
@@ -77,6 +78,7 @@ function App() {
   const [discoverResults, setDiscoverResults] = useState([]);
   const [reviewChannel, setReviewChannel] = useState(null);
   const [reviewVideos, setReviewVideos] = useState([]);
+  const [appLog, setAppLog] = useState('');
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [newPinInput, setNewPinInput] = useState('');
@@ -327,6 +329,32 @@ function App() {
     }
   }
 
+  async function hideVideo(video) {
+    if (settings.hiddenVideos.includes(video.id)) return;
+    const nextHiddenVideos = [...settings.hiddenVideos, video.id];
+    await saveSettings({ ...settings, hiddenVideos: nextHiddenVideos });
+    setSelectedVideo((current) => current?.id === video.id ? null : current);
+    setStatus(`Hidden ${video.title}.`);
+  }
+
+  async function unhideVideo(videoId) {
+    await saveSettings({
+      ...settings,
+      hiddenVideos: settings.hiddenVideos.filter((hiddenId) => hiddenId !== videoId),
+    });
+    setStatus('Video restored.');
+  }
+
+  async function loadAppLog() {
+    try {
+      const logText = await window.appApi.readLog();
+      setAppLog(logText || 'No log entries yet.');
+      setStatus('Loaded app log.');
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
   async function blockChannel(channel) {
     if (settings.blockedChannels.includes(channel.id)) {
       setDiscoverResults((results) => results.filter((result) => result.id !== channel.id));
@@ -397,14 +425,19 @@ function App() {
     ? enabledChannels
     : enabledChannels.filter((channel) => (channel.category || 'Learning') === selectedCategory);
   const enabledApprovedIds = new Set(enabledChannels.map((channel) => channel.id));
-  const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) ? selectedVideo : null;
+  const hiddenVideoIds = new Set(settings.hiddenVideos);
+  const visibleVideos = videos.filter((video) => !hiddenVideoIds.has(video.id));
+  const playableVideo = selectedVideo && enabledApprovedIds.has(selectedVideo.channelId) && !hiddenVideoIds.has(selectedVideo.id) ? selectedVideo : null;
   const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
-  const filteredVideos = videos.filter((video) => (
+  const filteredVideos = visibleVideos.filter((video) => (
     (selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory)
     && (selectedChannelId === 'All' || video.channelId === selectedChannelId)
   ));
-  const categoryFilteredVideos = videos.filter((video) => (
+  const categoryFilteredVideos = visibleVideos.filter((video) => (
     selectedCategory === 'All' || categoryByChannelId.get(video.channelId) === selectedCategory
+  ));
+  const hiddenVideoDetails = settings.hiddenVideos.map((videoId) => (
+    videos.find((video) => video.id === videoId) || { id: videoId, title: videoId, channelTitle: 'Unknown channel' }
   ));
 
   return (
@@ -469,7 +502,7 @@ function App() {
                 <small>{categoryFilteredVideos.length} videos</small>
               </button>
               {visibleChannels.map((channel) => {
-                const videoCount = videos.filter((video) => video.channelId === channel.id).length;
+                const videoCount = visibleVideos.filter((video) => video.channelId === channel.id).length;
                 return (
                   <button className={`channel-tile ${selectedChannelId === channel.id ? 'active' : ''}`} key={channel.id} onClick={() => setSelectedChannelId(channel.id)}>
                     {channel.thumbnail ? <img src={channel.thumbnail} alt="" /> : <span className="channel-avatar">{channel.title.slice(0, 2)}</span>}
@@ -484,11 +517,14 @@ function App() {
             {filteredVideos.length === 0 ? (
               <div className="empty-list">No videos match this filter yet.</div>
             ) : filteredVideos.map((video) => (
-              <button className="video-card" key={video.id} onClick={() => setSelectedVideo(video)}>
-                {video.thumbnail && <img src={video.thumbnail} alt="" />}
-                <strong>{video.title}</strong>
-                <span>{video.channelTitle} · {categoryByChannelId.get(video.channelId) || 'Learning'}</span>
-              </button>
+              <article className="video-card" key={video.id}>
+                <button className="video-play-button" onClick={() => setSelectedVideo(video)}>
+                  {video.thumbnail && <img src={video.thumbnail} alt="" />}
+                  <strong>{video.title}</strong>
+                  <span>{video.channelTitle} · {categoryByChannelId.get(video.channelId) || 'Learning'}</span>
+                </button>
+                {adminUnlocked && <button className="hide-video-button" onClick={() => hideVideo(video)}>Hide</button>}
+              </article>
             ))}
           </div>
         </section>
@@ -679,6 +715,20 @@ function App() {
                 </div>
               ))}
             </div>
+            <div className="manager-list hidden-video-list">
+              <h3>Hidden Videos ({settings.hiddenVideos.length})</h3>
+              {hiddenVideoDetails.length === 0 ? (
+                <p>No hidden videos.</p>
+              ) : hiddenVideoDetails.map((video) => (
+                <div className="manager-row" key={video.id}>
+                  <div>
+                    <strong>{video.title}</strong>
+                    <span>{video.channelTitle}</span>
+                  </div>
+                  <button onClick={() => unhideVideo(video.id)}>Unhide</button>
+                </div>
+              ))}
+            </div>
             <div className="manager-list security-list">
               <h3>Parent PIN</h3>
               <p>{settings.pinHash ? 'Admin mode is protected. Change the PIN here if needed.' : 'Set a PIN so children cannot enter Parent Admin.'}</p>
@@ -701,6 +751,12 @@ function App() {
                 <button className="primary" onClick={exportSettings}>Export Settings</button>
                 <button className="quiet-button" onClick={importSettings}>Import Settings</button>
               </div>
+            </div>
+            <div className="manager-list log-list">
+              <h3>Troubleshooting Log</h3>
+              <p>Recent feed and API failures are written locally for troubleshooting.</p>
+              <button className="primary" onClick={loadAppLog}>Load Recent Log</button>
+              {appLog && <pre className="log-output">{appLog}</pre>}
             </div>
           </div>
         </section>

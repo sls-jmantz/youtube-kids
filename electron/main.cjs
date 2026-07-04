@@ -4,13 +4,14 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const isDev = !app.isPackaged;
-const settingsSchemaVersion = 2;
+const settingsSchemaVersion = 3;
 
 const defaultSettings = {
   schemaVersion: settingsSchemaVersion,
   approvedChannels: [],
   blockedChannels: [],
   categories: ['Learning', 'Music', 'Shows', 'Calm'],
+  hiddenVideos: [],
   language: 'en',
   pinHash: '',
   pinSalt: '',
@@ -24,6 +25,25 @@ function settingsPath() {
 
 function feedCachePath(channelId) {
   return path.join(app.getPath('userData'), 'feed-cache', `${channelId}.xml`);
+}
+
+function logPath() {
+  return path.join(app.getPath('userData'), 'app.log');
+}
+
+async function appendLog(level, message, details = {}) {
+  try {
+    const entry = JSON.stringify({
+      at: new Date().toISOString(),
+      level,
+      message,
+      details,
+    });
+    await fs.mkdir(path.dirname(logPath()), { recursive: true });
+    await fs.appendFile(logPath(), `${entry}\n`);
+  } catch (_error) {
+    // Logging must never break playback, imports, or discovery.
+  }
 }
 
 async function readSettings() {
@@ -56,8 +76,10 @@ async function fetchChannelFeed(channelId) {
     return { xmlText, fromCache: false };
   } catch (error) {
     try {
+      await appendLog('warn', 'Using cached channel feed after refresh failure', { channelId, error: error.message });
       return { xmlText: await fs.readFile(cachePath, 'utf8'), fromCache: true, warning: error.message };
     } catch (_cacheError) {
+      await appendLog('error', 'Channel feed refresh failed with no cache available', { channelId, error: error.message });
       throw error;
     }
   }
@@ -88,6 +110,9 @@ function migrateSettings(rawSettings = {}) {
     : [];
   settings.blockedChannels = Array.isArray(settings.blockedChannels)
     ? [...new Set(settings.blockedChannels.map((id) => String(id).trim()).filter(Boolean))]
+    : [];
+  settings.hiddenVideos = Array.isArray(settings.hiddenVideos)
+    ? [...new Set(settings.hiddenVideos.map((id) => String(id).trim()).filter(Boolean))]
     : [];
   settings.categories = Array.isArray(settings.categories) && settings.categories.length > 0
     ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
@@ -239,6 +264,16 @@ app.whenReady().then(() => {
     return { canceled: false, settings: saved, filePath: result.filePaths[0] };
   });
 
+  ipcMain.handle('log:read', async () => {
+    try {
+      const raw = await fs.readFile(logPath(), 'utf8');
+      return raw.trim().split('\n').slice(-80).join('\n');
+    } catch (error) {
+      if (error.code === 'ENOENT') return '';
+      throw error;
+    }
+  });
+
   ipcMain.handle('pin:set', async (_event, pin) => {
     const normalizedPin = String(pin || '').trim();
     if (!/^\d{4,8}$/.test(normalizedPin)) throw new Error('PIN must be 4 to 8 digits.');
@@ -298,7 +333,10 @@ app.whenReady().then(() => {
       key: apiKey,
     });
     const searchResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`);
-    if (!searchResponse.ok) throw new Error(`Channel lookup failed: ${searchResponse.status}`);
+    if (!searchResponse.ok) {
+      await appendLog('error', 'Channel lookup failed', { status: searchResponse.status });
+      throw new Error(`Channel lookup failed: ${searchResponse.status}`);
+    }
     const searchData = await searchResponse.json();
     const item = searchData.items?.[0];
     return item?.id?.channelId
@@ -319,7 +357,10 @@ app.whenReady().then(() => {
       key: apiKey,
     });
     const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params.toString()}`);
-    if (!response.ok) throw new Error(`Discovery request failed: ${response.status}`);
+    if (!response.ok) {
+      await appendLog('error', 'Discovery request failed', { status: response.status, query });
+      throw new Error(`Discovery request failed: ${response.status}`);
+    }
     const data = await response.json();
     const channelIds = (data.items || []).map((item) => item.id.channelId).filter(Boolean);
     if (channelIds.length === 0) return { needsApiKey: false, items: [] };
@@ -329,7 +370,10 @@ app.whenReady().then(() => {
       key: apiKey,
     });
     const detailResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?${detailParams.toString()}`);
-    if (!detailResponse.ok) throw new Error(`Channel detail request failed: ${detailResponse.status}`);
+    if (!detailResponse.ok) {
+      await appendLog('error', 'Channel detail request failed', { status: detailResponse.status, channelIds });
+      throw new Error(`Channel detail request failed: ${detailResponse.status}`);
+    }
     const detailData = await detailResponse.json();
     const detailsById = new Map((detailData.items || []).map((item) => [item.id, item]));
 

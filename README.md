@@ -14,6 +14,8 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 8. Settings can be exported and imported for backup without including the PIN hash or YouTube API key.
 9. Watch mode has large channel tiles and category filters for a simpler toddler-facing browsing flow.
 10. Approved channel feeds are cached locally and reused if a later RSS refresh fails.
+11. Parent Admin can hide individual videos and restore them later.
+12. Feed and API failures are written to a local troubleshooting log.
 
 ## Run
 
@@ -48,6 +50,10 @@ Use Parent Admin to export or import settings. Exports include approved channels
 ## Offline Behavior
 
 The app caches each approved channel RSS feed after a successful refresh. If YouTube RSS is temporarily unavailable later, Watch mode can fall back to the last cached feed for that channel.
+
+## Hidden Videos And Logs
+
+Unlock Parent Admin to reveal `Hide` buttons in Watch mode. Hidden videos disappear from Watch mode until restored in Parent Admin. The Troubleshooting Log section shows recent feed/API failures from the local app log.
 
 ## Safety Notes
 
