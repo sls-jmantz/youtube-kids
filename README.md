@@ -23,12 +23,19 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 17. Watch mode supports Favorites and Recently Watched quick filters.
 18. Parent Admin can configure daily viewing minutes and quiet hours.
 19. Parent Admin can approve individual videos without approving the whole channel.
+20. Unit tests cover parser, settings migration, and allowlist behavior.
 
 ## Run
 
 ```bash
 npm install
 npm run dev
+```
+
+## Test
+
+```bash
+npm test
 ```
 
 ## Package

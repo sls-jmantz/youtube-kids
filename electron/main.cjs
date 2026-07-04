@@ -3,7 +3,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
-const isDev = !app.isPackaged;
+const isDev = !app?.isPackaged;
 const settingsSchemaVersion = 7;
 
 const defaultSettings = {
@@ -433,7 +433,8 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+function startApp() {
+  app.whenReady().then(() => {
   ipcMain.handle('settings:read', readSettings);
   ipcMain.handle('settings:write', (_event, settings) => writeSettings(settings));
 
@@ -623,8 +624,19 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
+  });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+}
+
+if (require.main === module) startApp();
+
+module.exports = {
+  canTest: true,
+  migrateSettings,
+  normalizeViewingLimits,
+  parseFeedEntries,
+  validateImportSettings,
+};

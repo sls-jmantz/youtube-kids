@@ -10,6 +10,7 @@
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "icons": "node scripts/generate-icons.cjs",
     "build": "vite build",
+    "test": "node --test",
     "start": "electron .",
     "package:linux": "electron-builder --linux AppImage deb",
     "package:windows": "electron-builder --win nsis"

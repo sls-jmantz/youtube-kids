@@ -4,15 +4,15 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 
 ## In Progress
 
-- Unit tests for parsers, settings migrations, and allowlist behavior.
+- UI tests for PIN, approval, blacklist, review, and backup flows.
 
 ## Next
 
-- UI tests for PIN, approval, blacklist, review, and backup flows.
+- Manual release packaging checklist.
 
 ## Later
 
-- Manual release packaging checklist.
+- Installer smoke testing on Windows and Linux.
 
 ## Done
 
@@ -42,3 +42,4 @@ This tracks the work needed to make the app reliable for daily family use. Escap
 - Individual video allowlist support.
 - Clear loading, empty, and error states across network actions.
 - App icons and release metadata.
+- Unit tests for parsers, settings migrations, and allowlist behavior.
