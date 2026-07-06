@@ -631,7 +631,7 @@ function startApp() {
   });
 }
 
-if (require.main === module) startApp();
+if (process.versions.electron || require.main === module) startApp();
 
 module.exports = {
   canTest: true,
