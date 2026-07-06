@@ -6,9 +6,24 @@ const path = require('node:path');
 if (process.platform !== 'linux') process.exit(0);
 
 const electronBinary = path.join(__dirname, '..', 'node_modules', 'electron', 'dist', 'electron');
+const electronInstallScript = path.join(__dirname, '..', 'node_modules', 'electron', 'install.js');
 if (!fs.existsSync(electronBinary)) {
-  console.error('Electron binary is missing. Run `npm install` first.');
-  process.exit(1);
+  if (!fs.existsSync(electronInstallScript)) {
+    console.error('Electron package is missing. Run `npm install` first.');
+    process.exit(1);
+  }
+  console.error('Electron runtime is missing. Downloading it now...');
+  try {
+    execFileSync(process.execPath, [electronInstallScript], { stdio: 'inherit' });
+  } catch (error) {
+    console.error('Electron runtime download failed. Try `npx install-electron` or remove `node_modules` and run `npm install` again.');
+    console.error(error.message);
+    process.exit(1);
+  }
+  if (!fs.existsSync(electronBinary)) {
+    console.error('Electron runtime is still missing after download. Try `npx install-electron`.');
+    process.exit(1);
+  }
 }
 
 let output = '';

@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "predev": "node scripts/check-linux-deps.cjs",
+    "electron:install": "node node_modules/electron/install.js",
     "icons": "node scripts/generate-icons.cjs",
     "build": "vite build",
     "test": "node --test",

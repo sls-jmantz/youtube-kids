@@ -33,7 +33,7 @@ npm install
 npm run dev
 ```
 
-On Linux, `npm run dev` checks Electron's required desktop libraries before starting. If it reports missing libraries, install the listed system packages and rerun `npm run dev`.
+On Linux, `npm run dev` checks Electron's runtime before starting. If the Electron runtime was not downloaded during install, the preflight will download it. If it reports missing system libraries, install the listed packages and rerun `npm run dev`.
 
 ## Test
 
