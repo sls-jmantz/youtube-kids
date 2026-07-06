@@ -6,21 +6,24 @@ Use this checklist when creating a local release package. Do not add GitHub Acti
 
 1. Confirm the working tree is clean with `git status --short`.
 2. Confirm the version in `package.json` is correct.
-3. Regenerate icons with `npm run icons` if `scripts/generate-icons.cjs` changed.
-4. Run `npm test`.
-5. Run `npm run build`.
-6. Run `node --check electron/main.cjs`.
-7. Run `node --check electron/preload.cjs`.
-8. Run `node --check scripts/generate-icons.cjs`.
-9. Run `npx electron-builder --linux dir` on Linux to validate packaging metadata quickly.
+3. Run `node scripts/check-linux-deps.cjs` on Linux.
+4. Regenerate icons with `npm run icons` if `scripts/generate-icons.cjs` changed.
+5. Run `npm test`.
+6. Run `npm run build`.
+7. Run `node --check electron/main.cjs`.
+8. Run `node --check electron/preload.cjs`.
+9. Run `node --check scripts/generate-icons.cjs`.
+10. Run `node --check scripts/check-linux-deps.cjs`.
+11. Run `npx electron-builder --linux dir` on Linux to validate packaging metadata quickly.
 
 ## Linux Packages
 
 1. Run `npm run package:linux` on Linux.
-2. Confirm `release/` contains an AppImage and a deb package.
+2. Confirm `release/` contains an AppImage.
 3. Launch the AppImage locally and confirm Watch mode opens.
-4. Install the deb package on a disposable/test machine if possible.
-5. Confirm app data persists across app restart.
+4. If a Debian package is needed, install `binutils`, run `npm run package:linux:deb`, and confirm `release/` contains a deb package.
+5. Install the deb package on a disposable/test machine if possible.
+6. Confirm app data persists across app restart.
 
 ## Windows Package
 

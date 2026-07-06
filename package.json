@@ -3,16 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "description": "A cross-platform approved-channel YouTube viewer for kids.",
-  "author": "sls-jmantz",
+  "author": {
+    "name": "sls-jmantz",
+    "email": "sls-jmantz@users.noreply.github.com"
+  },
   "license": "UNLICENSED",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "predev": "node scripts/check-linux-deps.cjs",
     "icons": "node scripts/generate-icons.cjs",
     "build": "vite build",
     "test": "node --test",
     "start": "electron .",
-    "package:linux": "electron-builder --linux AppImage deb",
+    "prestart": "node scripts/check-linux-deps.cjs",
+    "prepackage:linux": "npm run icons && npm run build",
+    "package:linux": "electron-builder --linux AppImage",
+    "prepackage:linux:deb": "npm run icons && npm run build",
+    "package:linux:deb": "electron-builder --linux deb",
+    "prepackage:windows": "npm run icons && npm run build",
     "package:windows": "electron-builder --win nsis"
   },
   "dependencies": {
@@ -45,8 +54,7 @@
     "linux": {
       "category": "Education",
       "target": [
-        "AppImage",
-        "deb"
+        "AppImage"
       ]
     },
     "win": {

@@ -33,6 +33,8 @@ npm install
 npm run dev
 ```
 
+On Linux, `npm run dev` checks Electron's required desktop libraries before starting. If it reports missing libraries, install the listed system packages and rerun `npm run dev`.
+
 ## Test
 
 ```bash
@@ -42,12 +44,11 @@ npm test
 ## Package
 
 ```bash
-npm run icons
 npm run package:linux
 npm run package:windows
 ```
 
-The app includes generated PNG/ICO icon assets under `build/`. Windows packaging is best run from Windows.
+`npm run package:linux` builds an AppImage. To build a Debian package, run `npm run package:linux:deb`; that requires `binutils` for the `ar` executable. Packaging regenerates icons and builds the renderer first. The app includes generated PNG/ICO icon assets under `build/`. Windows packaging is best run from Windows.
 
 See `RELEASE.md` for the manual release checklist.
 
