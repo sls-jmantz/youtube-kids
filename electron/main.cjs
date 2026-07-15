@@ -392,6 +392,38 @@ function parseFeedEntries(xmlText) {
   }).filter((video) => video.id);
 }
 
+function extractChannelIdFromHtml(html) {
+  const normalized = String(html || '').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+  const patterns = [
+    /youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{20,})/,
+    /"externalId"\s*:\s*"(UC[a-zA-Z0-9_-]{20,})"/,
+    /"channelId"\s*:\s*"(UC[a-zA-Z0-9_-]{20,})"/,
+    /"browseId"\s*:\s*"(UC[a-zA-Z0-9_-]{20,})"/,
+  ];
+  return patterns.map((pattern) => normalized.match(pattern)?.[1]).find(Boolean) || '';
+}
+
+async function resolveChannelFromPage(input) {
+  const trimmed = String(input || '').trim();
+  const handle = trimmed.match(/@([a-zA-Z0-9_.-]+)/)?.[0];
+  if (!handle) return null;
+  const response = await fetch(`https://www.youtube.com/${encodeURIComponent(handle)}`, {
+    headers: {
+      'Accept-Language': 'en-US,en;q=0.9',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36',
+    },
+    redirect: 'follow',
+  });
+  if (!response.ok) throw new Error(`YouTube channel page request failed: ${response.status}`);
+  const html = await response.text();
+  const id = extractChannelIdFromHtml(html);
+  if (!id) return null;
+  const title = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i)?.[1]
+    || html.match(/<title>([^<]+)<\/title>/i)?.[1]?.replace(/\s*-\s*YouTube\s*$/i, '')
+    || id;
+  return { id, title };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -534,6 +566,14 @@ function startApp() {
     const trimmed = (input || '').trim();
     const channelId = trimmed.match(/(UC[a-zA-Z0-9_-]{20,})/)?.[1];
     if (channelId) return { id: channelId, title: channelId };
+    if (/@[a-zA-Z0-9_.-]+/.test(trimmed)) {
+      try {
+        const resolved = await resolveChannelFromPage(trimmed);
+        if (resolved) return resolved;
+      } catch (error) {
+        await appendLog('warn', 'Channel handle page resolution failed', { input: trimmed, error: error.message });
+      }
+    }
     if (!apiKey) return { needsApiKey: true };
 
     const handle = trimmed.match(/@([a-zA-Z0-9_.-]+)/)?.[0] || (trimmed.startsWith('@') ? trimmed : `@${trimmed}`);
@@ -635,6 +675,7 @@ if (process.versions.electron || require.main === module) startApp();
 
 module.exports = {
   canTest: true,
+  extractChannelIdFromHtml,
   migrateSettings,
   normalizeViewingLimits,
   parseFeedEntries,

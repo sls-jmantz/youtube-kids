@@ -1,11 +1,21 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
+  extractChannelIdFromHtml,
   migrateSettings,
   normalizeViewingLimits,
   parseFeedEntries,
   validateImportSettings,
 } = require('../electron/main.cjs');
+
+test('extractChannelIdFromHtml recognizes public channel page markers', () => {
+  const channelId = 'UCabcdefghijklmnopqrstuv';
+  assert.equal(extractChannelIdFromHtml(`<link rel="canonical" href="https://www.youtube.com/channel/${channelId}">`), channelId);
+  assert.equal(extractChannelIdFromHtml(`{"externalId":"${channelId}"}`), channelId);
+  assert.equal(extractChannelIdFromHtml(`{"channelId":"${channelId}"}`), channelId);
+  assert.equal(extractChannelIdFromHtml(`{"browseId":"${channelId}"}`), channelId);
+  assert.equal(extractChannelIdFromHtml('<html>No channel marker</html>'), '');
+});
 
 test('migrateSettings normalizes schema and approved video metadata', () => {
   const { settings, needsWrite } = migrateSettings({

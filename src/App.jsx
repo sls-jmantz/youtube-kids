@@ -174,7 +174,7 @@ function App() {
       setStatus('Resolving channel handle...');
       const resolved = await window.appApi.resolveChannel({ input: channel.id, apiKey: settings.youtubeApiKey });
       if (resolved.needsApiKey) {
-        throw new Error('Paste a UC channel ID, or add a YouTube Data API key to resolve @handles and channel names.');
+        throw new Error('Could not resolve that input without the API. Paste a UC channel ID or exact @handle, or add an API key for channel-name search.');
       }
       if (resolved.notFound || !resolved.id) {
         throw new Error('Could not find that channel. Try pasting the channel ID or exact @handle.');
@@ -740,7 +740,7 @@ function App() {
         <section className="admin-layout">
           <div className="panel">
             <h2>Manual Approval</h2>
-            <p>Paste a UC channel ID, channel URL, or @handle. Handles need the API key; UC IDs work without one.</p>
+            <p>Paste a UC channel ID, channel URL, or exact @handle. IDs and handles work without an API key; channel-name search needs one.</p>
             <label>
               Channel ID, URL, or @handle
               <input value={channelIdInput} onChange={(event) => setChannelIdInput(event.target.value)} placeholder="UC..., youtube.com/@channel, or @channel" />
