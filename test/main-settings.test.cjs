@@ -2,11 +2,29 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   extractChannelIdFromHtml,
+  frameNavigationDetails,
+  isAllowedAppUrl,
+  isAllowedFrameUrl,
   migrateSettings,
   normalizeViewingLimits,
   parseFeedEntries,
   validateImportSettings,
 } = require('../electron/main.cjs');
+
+test('navigation guards support Electron object and positional event signatures', () => {
+  assert.deepEqual(frameNavigationDetails({ url: 'https://example.com', isMainFrame: true }), {
+    url: 'https://example.com',
+    isMainFrame: true,
+  });
+  assert.deepEqual(frameNavigationDetails('https://example.com', false), {
+    url: 'https://example.com',
+    isMainFrame: false,
+  });
+  assert.equal(isAllowedAppUrl(undefined), false);
+  assert.equal(isAllowedFrameUrl(undefined), false);
+  assert.equal(isAllowedFrameUrl('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ'), true);
+  assert.equal(isAllowedFrameUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), false);
+});
 
 test('extractChannelIdFromHtml recognizes public channel page markers', () => {
   const channelId = 'UCabcdefghijklmnopqrstuv';

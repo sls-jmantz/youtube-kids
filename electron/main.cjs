@@ -370,12 +370,21 @@ function hashPin(pin, salt) {
 }
 
 function isAllowedAppUrl(url) {
+  if (typeof url !== 'string') return false;
   if (isDev && url.startsWith('http://127.0.0.1:5173')) return true;
   return url.startsWith('file://');
 }
 
 function isAllowedFrameUrl(url) {
+  if (typeof url !== 'string') return false;
   return url.startsWith('https://www.youtube-nocookie.com/') || url.startsWith('https://www.youtube.com/embed/');
+}
+
+function frameNavigationDetails(urlOrDetails, isMainFrame) {
+  if (urlOrDetails && typeof urlOrDetails === 'object') {
+    return { url: urlOrDetails.url, isMainFrame: urlOrDetails.isMainFrame === true };
+  }
+  return { url: urlOrDetails, isMainFrame: isMainFrame === true };
 }
 
 function parseFeedEntries(xmlText) {
@@ -453,7 +462,8 @@ function createWindow() {
     if (!isAllowedAppUrl(url)) event.preventDefault();
   });
 
-  win.webContents.on('will-frame-navigate', (event, details) => {
+  win.webContents.on('will-frame-navigate', (event, urlOrDetails, _isInPlace, isMainFrame) => {
+    const details = frameNavigationDetails(urlOrDetails, isMainFrame);
     if (details.isMainFrame && !isAllowedAppUrl(details.url)) event.preventDefault();
     if (!details.isMainFrame && !isAllowedFrameUrl(details.url)) event.preventDefault();
   });
@@ -676,6 +686,9 @@ if (process.versions.electron || require.main === module) startApp();
 module.exports = {
   canTest: true,
   extractChannelIdFromHtml,
+  frameNavigationDetails,
+  isAllowedAppUrl,
+  isAllowedFrameUrl,
   migrateSettings,
   normalizeViewingLimits,
   parseFeedEntries,
