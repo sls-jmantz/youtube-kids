@@ -21,6 +21,8 @@ test('navigation guards support Electron object and positional event signatures'
     isMainFrame: false,
   });
   assert.equal(isAllowedAppUrl(undefined), false);
+  assert.equal(isAllowedAppUrl('http://127.0.0.1:51730/'), false);
+  assert.equal(isAllowedAppUrl('http://127.0.0.1:5173@attacker.example/'), false);
   assert.equal(isAllowedFrameUrl(undefined), false);
   assert.equal(isAllowedFrameUrl('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ'), true);
   assert.equal(isAllowedFrameUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), false);
@@ -38,7 +40,7 @@ test('extractChannelIdFromHtml recognizes public channel page markers', () => {
 test('migrateSettings normalizes schema and approved video metadata', () => {
   const { settings, needsWrite } = migrateSettings({
     schemaVersion: 4,
-    approvedChannels: [{ id: 'UCsafechannel000000000000', title: 'Safe', enabled: false }],
+    approvedChannels: [{ id: 'UCabcdefghijklmnopqrstuv', title: 'Safe', enabled: false }],
     approvedVideos: ['dQw4w9WgXcQ', 'dQw4w9WgXcQ', ''],
     approvedVideoDetails: {
       dQw4w9WgXcQ: { title: 'Safe Video', channelTitle: 'Safe Channel', category: 'Music' },
@@ -67,18 +69,29 @@ test('normalizeViewingLimits clamps minutes and validates times', () => {
     quietStart: '21:15',
     quietEnd: '07:00',
   });
+  assert.deepEqual(normalizeViewingLimits(null), {
+    enabled: false,
+    dailyMinutes: 60,
+    quietHoursEnabled: false,
+    quietStart: '20:00',
+    quietEnd: '07:00',
+  });
+  assert.equal(normalizeViewingLimits({ quietStart: '99:99' }).quietStart, '20:00');
 });
 
 test('validateImportSettings rejects invalid allowlist shapes', () => {
   assert.throws(() => validateImportSettings({ approvedVideos: 'dQw4w9WgXcQ' }), /approvedVideos/);
+  assert.throws(() => validateImportSettings({ approvedVideos: ['too-short'] }), /invalid approved video ID/);
   assert.throws(() => validateImportSettings({ approvedChannels: [{ id: 'not-a-channel' }] }), /valid UC channel ID/);
+  assert.throws(() => validateImportSettings({ approvedChannels: [{ id: 'UCtooShort' }] }), /valid UC channel ID/);
+  assert.throws(() => migrateSettings({ schemaVersion: 999 }), /newer than this app supports/);
 });
 
 test('parseFeedEntries extracts video IDs, titles, dates, and thumbnails', () => {
   const videos = parseFeedEntries(`
     <feed>
       <entry>
-        <yt:videoId>abc123video1</yt:videoId>
+        <yt:videoId>abc123vide1</yt:videoId>
         <title><![CDATA[Safe Title]]></title>
         <published>2026-01-02T03:04:05+00:00</published>
         <media:thumbnail url="https://img.example/thumb.jpg" />
@@ -86,7 +99,7 @@ test('parseFeedEntries extracts video IDs, titles, dates, and thumbnails', () =>
     </feed>
   `);
   assert.deepEqual(videos, [{
-    id: 'abc123video1',
+    id: 'abc123vide1',
     title: 'Safe Title',
     published: '2026-01-02T03:04:05+00:00',
     thumbnail: 'https://img.example/thumb.jpg',

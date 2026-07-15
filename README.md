@@ -28,8 +28,10 @@ A Windows/Linux Electron app for watching only manually approved YouTube channel
 
 ## Run
 
+Node.js 22.12 or newer is required.
+
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 

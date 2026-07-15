@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   approvedVideoFromInput,
   canPlayVideo,
+  isValidChannelId,
   normalizeChannelId,
   normalizeVideoId,
   parseBulkChannelLine,
@@ -13,6 +14,8 @@ test('normalizeChannelId extracts UC IDs from URLs', () => {
     normalizeChannelId('https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv'),
     'UCabcdefghijklmnopqrstuv',
   );
+  assert.equal(isValidChannelId('UCabcdefghijklmnopqrstuv'), true);
+  assert.equal(isValidChannelId('UCtooShort'), false);
 });
 
 test('normalizeVideoId accepts YouTube URLs and bare IDs', () => {
@@ -49,12 +52,12 @@ test('approvedVideoFromInput creates display metadata', () => {
 });
 
 test('canPlayVideo allows enabled approved channels and standalone approved videos only', () => {
-  const enabledChannels = new Set(['UCsafechannel000000000000']);
-  const approvedVideos = new Set(['standalone01']);
-  const hiddenVideos = new Set(['hiddenvideo1']);
+  const enabledChannels = new Set(['UCabcdefghijklmnopqrstuv']);
+  const approvedVideos = new Set(['standalone1']);
+  const hiddenVideos = new Set(['hiddenvide1']);
 
-  assert.equal(canPlayVideo({ id: 'feedvideo01', channelId: 'UCsafechannel000000000000' }, enabledChannels, approvedVideos, hiddenVideos), true);
-  assert.equal(canPlayVideo({ id: 'standalone01', channelId: 'UCunknownchannel0000000' }, enabledChannels, approvedVideos, hiddenVideos), true);
-  assert.equal(canPlayVideo({ id: 'hiddenvideo1', channelId: 'UCsafechannel000000000000' }, enabledChannels, approvedVideos, hiddenVideos), false);
-  assert.equal(canPlayVideo({ id: 'other-video', channelId: 'UCunknownchannel0000000' }, enabledChannels, approvedVideos, hiddenVideos), false);
+  assert.equal(canPlayVideo({ id: 'feedvideo01', channelId: 'UCabcdefghijklmnopqrstuv' }, enabledChannels, approvedVideos, hiddenVideos), true);
+  assert.equal(canPlayVideo({ id: 'standalone1', channelId: 'UCzyxwvutsrqponmlkjihgfe' }, enabledChannels, approvedVideos, hiddenVideos), true);
+  assert.equal(canPlayVideo({ id: 'hiddenvide1', channelId: 'UCabcdefghijklmnopqrstuv' }, enabledChannels, approvedVideos, hiddenVideos), false);
+  assert.equal(canPlayVideo({ id: 'other-video1', channelId: 'UCzyxwvutsrqponmlkjihgfe' }, enabledChannels, approvedVideos, hiddenVideos), false);
 });

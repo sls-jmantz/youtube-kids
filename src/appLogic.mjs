@@ -54,6 +54,7 @@ export function viewingStatus(settings) {
 
 export function parseFeed(xmlText, channel) {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error(`Invalid video feed returned for ${channel.title}.`);
   const textFor = (entry, localName) => Array.from(entry.getElementsByTagName('*'))
     .find((node) => node.localName === localName)?.textContent || '';
   const attrFor = (entry, localName, attrName) => Array.from(entry.getElementsByTagName('*'))
@@ -70,8 +71,12 @@ export function parseFeed(xmlText, channel) {
 
 export function normalizeChannelId(input) {
   const trimmed = input.trim();
-  const match = trimmed.match(/(UC[a-zA-Z0-9_-]{20,})/);
+  const match = trimmed.match(/(UC[a-zA-Z0-9_-]{22})(?![a-zA-Z0-9_-])/);
   return match ? match[1] : trimmed;
+}
+
+export function isValidChannelId(input) {
+  return /^UC[a-zA-Z0-9_-]{22}$/.test(String(input || '').trim());
 }
 
 export function normalizeVideoId(input) {

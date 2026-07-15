@@ -1,10 +1,14 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
-const isDev = !app?.isPackaged;
+const isDev = !app?.isPackaged && !process.argv.includes('--load-dist');
 const settingsSchemaVersion = 7;
+const channelIdPattern = /^UC[a-zA-Z0-9_-]{22}$/;
+const videoIdPattern = /^[a-zA-Z0-9_-]{11}$/;
+let settingsWriteQueue = Promise.resolve();
 
 const defaultSettings = {
   schemaVersion: settingsSchemaVersion,
@@ -38,6 +42,7 @@ function settingsPath() {
 }
 
 function feedCachePath(channelId) {
+  if (!channelIdPattern.test(channelId)) throw new Error('Invalid YouTube channel ID.');
   return path.join(app.getPath('userData'), 'feed-cache', `${channelId}.xml`);
 }
 
@@ -77,10 +82,21 @@ async function readSettings() {
 }
 
 async function writeSettings(settings) {
-  const nextSettings = migrateSettings(settings).settings;
-  await fs.mkdir(path.dirname(settingsPath()), { recursive: true });
-  await fs.writeFile(settingsPath(), JSON.stringify(nextSettings, null, 2));
-  return nextSettings;
+  const operation = settingsWriteQueue.then(async () => {
+    const nextSettings = migrateSettings(settings).settings;
+    const filePath = settingsPath();
+    const temporaryPath = `${filePath}.${process.pid}.tmp`;
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    try {
+      await fs.writeFile(temporaryPath, JSON.stringify(nextSettings, null, 2));
+      await fs.rename(temporaryPath, filePath);
+    } finally {
+      await fs.rm(temporaryPath, { force: true }).catch(() => {});
+    }
+    return nextSettings;
+  });
+  settingsWriteQueue = operation.catch(() => {});
+  return operation;
 }
 
 async function backupCurrentSettings(reason) {
@@ -95,8 +111,11 @@ async function backupCurrentSettings(reason) {
       fs.unlink(path.join(backupDir(), fileName))
     )));
   } catch (error) {
-    if (error.code !== 'ENOENT') await appendLog('warn', 'Settings backup failed', { reason, error: error.message });
+    if (error.code === 'ENOENT') return false;
+    await appendLog('warn', 'Settings backup failed', { reason, error: error.message });
+    throw new Error(`Settings backup failed: ${error.message}`);
   }
+  return true;
 }
 
 async function listSettingBackups() {
@@ -136,9 +155,12 @@ async function restoreSettingsBackup(fileName) {
 }
 
 async function fetchChannelFeed(channelId) {
+  if (!channelIdPattern.test(String(channelId || ''))) throw new Error('Invalid YouTube channel ID.');
   const cachePath = feedCachePath(channelId);
   try {
-    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`);
+    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, {
+      signal: AbortSignal.timeout(15000),
+    });
     if (!response.ok) throw new Error(`Feed request failed: ${response.status}`);
     const xmlText = await response.text();
     await fs.mkdir(path.dirname(cachePath), { recursive: true });
@@ -173,25 +195,29 @@ function normalizeApprovedChannel(channel) {
 }
 
 function migrateSettings(rawSettings = {}) {
+  if (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) rawSettings = {};
+  if (Number(rawSettings.schemaVersion) > settingsSchemaVersion) {
+    throw new Error(`Settings schema ${rawSettings.schemaVersion} is newer than this app supports.`);
+  }
   const settings = { ...defaultSettings, ...rawSettings };
   settings.schemaVersion = settingsSchemaVersion;
   settings.approvedChannels = Array.isArray(settings.approvedChannels)
-    ? settings.approvedChannels.map(normalizeApprovedChannel).filter((channel) => channel.id)
+    ? settings.approvedChannels.map(normalizeApprovedChannel).filter((channel) => channelIdPattern.test(channel.id))
     : [];
   settings.approvedVideos = Array.isArray(settings.approvedVideos)
-    ? [...new Set(settings.approvedVideos.map((id) => String(id).trim()).filter(Boolean))]
+    ? [...new Set(settings.approvedVideos.map((id) => String(id).trim()).filter((id) => videoIdPattern.test(id)))]
     : [];
   settings.blockedChannels = Array.isArray(settings.blockedChannels)
-    ? [...new Set(settings.blockedChannels.map((id) => String(id).trim()).filter(Boolean))]
+    ? [...new Set(settings.blockedChannels.map((id) => String(id).trim()).filter((id) => channelIdPattern.test(id)))]
     : [];
   settings.hiddenVideos = Array.isArray(settings.hiddenVideos)
-    ? [...new Set(settings.hiddenVideos.map((id) => String(id).trim()).filter(Boolean))]
+    ? [...new Set(settings.hiddenVideos.map((id) => String(id).trim()).filter((id) => videoIdPattern.test(id)))]
     : [];
   settings.favoriteVideos = Array.isArray(settings.favoriteVideos)
-    ? [...new Set(settings.favoriteVideos.map((id) => String(id).trim()).filter(Boolean))]
+    ? [...new Set(settings.favoriteVideos.map((id) => String(id).trim()).filter((id) => videoIdPattern.test(id)))]
     : [];
   settings.recentlyWatched = Array.isArray(settings.recentlyWatched)
-    ? settings.recentlyWatched.filter((video) => video && typeof video === 'object' && typeof video.id === 'string').slice(0, 50)
+    ? settings.recentlyWatched.filter((video) => video && typeof video === 'object' && videoIdPattern.test(String(video.id || ''))).slice(0, 50)
     : [];
   settings.usageByDate = settings.usageByDate && typeof settings.usageByDate === 'object' && !Array.isArray(settings.usageByDate)
     ? Object.fromEntries(Object.entries(settings.usageByDate).map(([date, minutes]) => [date, Math.max(0, Number(minutes) || 0)]))
@@ -219,12 +245,27 @@ function migrateSettings(rawSettings = {}) {
   settings.categories = Array.isArray(settings.categories) && settings.categories.length > 0
     ? [...new Set(settings.categories.map((category) => String(category).trim()).filter(Boolean))]
     : defaultSettings.categories;
+  settings.language = typeof settings.language === 'string' && settings.language.trim() ? settings.language.trim() : 'en';
+  settings.region = typeof settings.region === 'string' && settings.region.trim() ? settings.region.trim() : 'US';
+  settings.youtubeApiKey = typeof settings.youtubeApiKey === 'string' ? settings.youtubeApiKey : '';
+  settings.pinHash = typeof settings.pinHash === 'string' && /^[a-f0-9]{64}$/i.test(settings.pinHash) ? settings.pinHash : '';
+  settings.pinSalt = settings.pinHash && typeof settings.pinSalt === 'string' && /^[a-f0-9]{32}$/i.test(settings.pinSalt) ? settings.pinSalt : '';
+  if (!settings.pinSalt) settings.pinHash = '';
+  const fallbackCategory = settings.categories[0];
+  settings.approvedChannels = settings.approvedChannels.map((channel) => ({
+    ...channel,
+    category: settings.categories.includes(channel.category) ? channel.category : fallbackCategory,
+  }));
   settings.approvedVideoDetails = normalizeVideoDetails(settings.approvedVideos, settings.approvedVideoDetails, 'approvedAt');
+  settings.approvedVideoDetails = Object.fromEntries(Object.entries(settings.approvedVideoDetails).map(([videoId, video]) => [videoId, {
+    ...video,
+    category: settings.categories.includes(video.category) ? video.category : fallbackCategory,
+  }]));
   settings.favoriteVideoDetails = normalizeVideoDetails(settings.favoriteVideos, settings.favoriteVideoDetails, 'favoritedAt');
   settings.recentlyWatched = settings.recentlyWatched.map((video) => normalizeVideoDetail(video.id, video, 'watchedAt'));
   return {
     settings,
-    needsWrite: rawSettings.schemaVersion !== settingsSchemaVersion,
+    needsWrite: JSON.stringify(rawSettings) !== JSON.stringify(settings),
   };
 }
 
@@ -247,8 +288,9 @@ function normalizeVideoDetails(videoIds, details, dateField) {
 }
 
 function normalizeViewingLimits(limits = {}) {
+  if (!limits || typeof limits !== 'object' || Array.isArray(limits)) limits = {};
   const dailyMinutes = Math.max(1, Math.min(720, Number(limits.dailyMinutes) || defaultSettings.viewingLimits.dailyMinutes));
-  const timePattern = /^\d{2}:\d{2}$/;
+  const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
   return {
     enabled: limits.enabled === true,
     dailyMinutes,
@@ -268,20 +310,32 @@ function validateImportSettings(rawSettings) {
   if (rawSettings.approvedVideos !== undefined && !Array.isArray(rawSettings.approvedVideos)) {
     throw new Error('Import file has invalid approvedVideos. Expected an array.');
   }
+  if (Array.isArray(rawSettings.approvedVideos) && rawSettings.approvedVideos.some((id) => !videoIdPattern.test(String(id || '').trim()))) {
+    throw new Error('Import file has an invalid approved video ID.');
+  }
   if (rawSettings.approvedVideoDetails !== undefined && (!rawSettings.approvedVideoDetails || typeof rawSettings.approvedVideoDetails !== 'object' || Array.isArray(rawSettings.approvedVideoDetails))) {
     throw new Error('Import file has invalid approvedVideoDetails. Expected an object.');
   }
   if (rawSettings.blockedChannels !== undefined && !Array.isArray(rawSettings.blockedChannels)) {
     throw new Error('Import file has invalid blockedChannels. Expected an array.');
   }
+  if (Array.isArray(rawSettings.blockedChannels) && rawSettings.blockedChannels.some((id) => !channelIdPattern.test(String(id || '').trim()))) {
+    throw new Error('Import file has an invalid blocked channel ID.');
+  }
   if (rawSettings.hiddenVideos !== undefined && !Array.isArray(rawSettings.hiddenVideos)) {
     throw new Error('Import file has invalid hiddenVideos. Expected an array.');
+  }
+  if (Array.isArray(rawSettings.hiddenVideos) && rawSettings.hiddenVideos.some((id) => !videoIdPattern.test(String(id || '').trim()))) {
+    throw new Error('Import file has an invalid hidden video ID.');
   }
   if (rawSettings.hiddenVideoDetails !== undefined && (!rawSettings.hiddenVideoDetails || typeof rawSettings.hiddenVideoDetails !== 'object' || Array.isArray(rawSettings.hiddenVideoDetails))) {
     throw new Error('Import file has invalid hiddenVideoDetails. Expected an object.');
   }
   if (rawSettings.favoriteVideos !== undefined && !Array.isArray(rawSettings.favoriteVideos)) {
     throw new Error('Import file has invalid favoriteVideos. Expected an array.');
+  }
+  if (Array.isArray(rawSettings.favoriteVideos) && rawSettings.favoriteVideos.some((id) => !videoIdPattern.test(String(id || '').trim()))) {
+    throw new Error('Import file has an invalid favorite video ID.');
   }
   if (rawSettings.favoriteVideoDetails !== undefined && (!rawSettings.favoriteVideoDetails || typeof rawSettings.favoriteVideoDetails !== 'object' || Array.isArray(rawSettings.favoriteVideoDetails))) {
     throw new Error('Import file has invalid favoriteVideoDetails. Expected an object.');
@@ -300,7 +354,7 @@ function validateImportSettings(rawSettings) {
   }
   if (Array.isArray(rawSettings.approvedChannels)) {
     const invalidChannel = rawSettings.approvedChannels.find((channel) => (
-      !channel || typeof channel !== 'object' || typeof channel.id !== 'string' || !channel.id.trim().startsWith('UC')
+      !channel || typeof channel !== 'object' || typeof channel.id !== 'string' || !channelIdPattern.test(channel.id.trim())
     ));
     if (invalidChannel) throw new Error('Import file has an approved channel without a valid UC channel ID.');
   }
@@ -371,13 +425,27 @@ function hashPin(pin, salt) {
 
 function isAllowedAppUrl(url) {
   if (typeof url !== 'string') return false;
-  if (isDev && url.startsWith('http://127.0.0.1:5173')) return true;
-  return url.startsWith('file://');
+  try {
+    const parsed = new URL(url);
+    if (isDev) return parsed.origin === 'http://127.0.0.1:5173';
+    parsed.hash = '';
+    parsed.search = '';
+    return parsed.href === pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).href;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function isAllowedFrameUrl(url) {
   if (typeof url !== 'string') return false;
-  return url.startsWith('https://www.youtube-nocookie.com/') || url.startsWith('https://www.youtube.com/embed/');
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    if (parsed.hostname === 'www.youtube-nocookie.com') return parsed.pathname.startsWith('/embed/');
+    return parsed.hostname === 'www.youtube.com' && parsed.pathname.startsWith('/embed/');
+  } catch (_error) {
+    return false;
+  }
 }
 
 function frameNavigationDetails(urlOrDetails, isMainFrame) {
@@ -404,10 +472,10 @@ function parseFeedEntries(xmlText) {
 function extractChannelIdFromHtml(html) {
   const normalized = String(html || '').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
   const patterns = [
-    /youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{20,})/,
-    /"externalId"\s*:\s*"(UC[a-zA-Z0-9_-]{20,})"/,
-    /"channelId"\s*:\s*"(UC[a-zA-Z0-9_-]{20,})"/,
-    /"browseId"\s*:\s*"(UC[a-zA-Z0-9_-]{20,})"/,
+    /youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{22})(?![a-zA-Z0-9_-])/,
+    /"externalId"\s*:\s*"(UC[a-zA-Z0-9_-]{22})"/,
+    /"channelId"\s*:\s*"(UC[a-zA-Z0-9_-]{22})"/,
+    /"browseId"\s*:\s*"(UC[a-zA-Z0-9_-]{22})"/,
   ];
   return patterns.map((pattern) => normalized.match(pattern)?.[1]).find(Boolean) || '';
 }
@@ -422,6 +490,7 @@ async function resolveChannelFromPage(input) {
       'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36',
     },
     redirect: 'follow',
+    signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) throw new Error(`YouTube channel page request failed: ${response.status}`);
   const html = await response.text();
@@ -444,13 +513,11 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://www.youtube.com/') || url.startsWith('https://www.youtube-nocookie.com/')) return { action: 'deny' };
-    shell.openExternal(url);
     return { action: 'deny' };
   });
 
@@ -473,9 +540,20 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+  return win;
 }
 
 function startApp() {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+    return;
+  }
+  let mainWindow;
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
   app.whenReady().then(() => {
   ipcMain.handle('settings:read', readSettings);
   ipcMain.handle('settings:write', (_event, settings) => writeSettings(settings));
@@ -574,7 +652,7 @@ function startApp() {
 
   ipcMain.handle('youtube:resolveChannel', async (_event, { input, apiKey }) => {
     const trimmed = (input || '').trim();
-    const channelId = trimmed.match(/(UC[a-zA-Z0-9_-]{20,})/)?.[1];
+    const channelId = trimmed.match(/(UC[a-zA-Z0-9_-]{22})(?![a-zA-Z0-9_-])/)?.[1];
     if (channelId) return { id: channelId, title: channelId };
     if (/@[a-zA-Z0-9_.-]+/.test(trimmed)) {
       try {
@@ -592,12 +670,14 @@ function startApp() {
       forHandle: handle,
       key: apiKey,
     });
-    const handleResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?${handleParams.toString()}`);
+    const handleResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?${handleParams.toString()}`, { signal: AbortSignal.timeout(15000) });
     if (handleResponse.ok) {
       const handleData = await handleResponse.json();
       const channel = handleData.items?.[0];
       if (channel?.id) return { id: channel.id, title: channel.snippet?.title || channel.id };
     }
+
+    if (/@[a-zA-Z0-9_.-]+/.test(trimmed)) return { notFound: true };
 
     const searchParams = new URLSearchParams({
       part: 'snippet',
@@ -607,7 +687,7 @@ function startApp() {
       safeSearch: 'strict',
       key: apiKey,
     });
-    const searchResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`);
+    const searchResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`, { signal: AbortSignal.timeout(15000) });
     if (!searchResponse.ok) {
       const message = await youtubeErrorMessage(searchResponse, 'Channel lookup failed');
       await appendLog('error', 'Channel lookup failed', { status: searchResponse.status, message });
@@ -632,7 +712,7 @@ function startApp() {
       safeSearch: 'strict',
       key: apiKey,
     });
-    const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params.toString()}`);
+    const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params.toString()}`, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) {
       const message = await youtubeErrorMessage(response, 'Discovery request failed');
       await appendLog('error', 'Discovery request failed', { status: response.status, query, message });
@@ -646,7 +726,7 @@ function startApp() {
       id: channelIds.join(','),
       key: apiKey,
     });
-    const detailResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?${detailParams.toString()}`);
+    const detailResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?${detailParams.toString()}`, { signal: AbortSignal.timeout(15000) });
     if (!detailResponse.ok) {
       const message = await youtubeErrorMessage(detailResponse, 'Channel detail request failed');
       await appendLog('error', 'Channel detail request failed', { status: detailResponse.status, channelIds, message });
@@ -669,10 +749,10 @@ function startApp() {
     };
   });
 
-  createWindow();
+  mainWindow = createWindow();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
   });
   });
 

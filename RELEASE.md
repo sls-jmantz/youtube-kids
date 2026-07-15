@@ -14,7 +14,8 @@ Use this checklist when creating a local release package. Do not add GitHub Acti
 8. Run `node --check electron/preload.cjs`.
 9. Run `node --check scripts/generate-icons.cjs`.
 10. Run `node --check scripts/check-linux-deps.cjs`.
-11. Run `npx electron-builder --linux dir` on Linux to validate packaging metadata quickly.
+11. Run `node --check scripts/check-built-app.cjs`.
+12. Run `npx electron-builder --linux dir` on Linux to validate packaging metadata quickly.
 
 ## Linux Packages
 

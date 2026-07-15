@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import {
@@ -9,6 +9,7 @@ import {
   createApprovedChannel,
   emptySettings,
   filterDiscoveryResults,
+  isValidChannelId,
   modeForAdminOpen,
   normalizeChannelId,
   normalizeVideoId,
@@ -22,6 +23,11 @@ import {
 
 function App() {
   const [settings, setSettings] = useState(emptySettings);
+  const settingsRef = useRef(emptySettings);
+  const settingsWriteQueueRef = useRef(Promise.resolve());
+  const settingsRevisionRef = useRef(0);
+  const reviewRequestRef = useRef(0);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -55,10 +61,23 @@ function App() {
 
   useEffect(() => {
     window.appApi.readSettings().then((loaded) => {
+      settingsRef.current = loaded;
       setSettings(loaded);
+      setSettingsLoaded(true);
+      if (loaded.pinHash && !adminUnlocked) setMode((current) => current === 'admin' ? 'unlock' : current);
       setStatus('Ready');
-    }).catch((error) => setStatus(error.message));
+    }).catch((error) => {
+      setSettingsLoaded(true);
+      setStatus(error.message);
+    });
   }, []);
+
+  const feedChannelKey = settings.approvedChannels
+    .filter((channel) => channel.enabled !== false)
+    .map((channel) => `${channel.id}:${channel.title}`)
+    .join('|');
+  const approvedVideoKey = settings.approvedVideos.join('|');
+  const hiddenVideoKey = settings.hiddenVideos.join('|');
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +85,7 @@ function App() {
       const enabledChannels = settings.approvedChannels.filter((channel) => channel.enabled !== false);
       if (!enabledChannels.length) {
         setVideos([]);
-        setSelectedVideo(null);
+        setSelectedVideo((current) => current && settings.approvedVideos.includes(current.id) ? current : null);
         setLoadingVideos(false);
         setVideoLoadError('');
         return;
@@ -75,7 +94,7 @@ function App() {
       setVideoLoadError('');
       setStatus('Loading approved channel videos...');
       try {
-        const feeds = await Promise.all(enabledChannels.map(async (channel) => {
+        const feedResults = await Promise.allSettled(enabledChannels.map(async (channel) => {
           const feed = await window.appApi.fetchChannelFeed(channel.id);
           return {
             videos: parseFeed(feed.xmlText, channel),
@@ -83,10 +102,18 @@ function App() {
           };
         }));
         if (cancelled) return;
+        const feeds = feedResults.filter((result) => result.status === 'fulfilled').map((result) => result.value);
+        const failures = feedResults.filter((result) => result.status === 'rejected');
         const nextVideos = feeds.flatMap((feed) => feed.videos).sort((a, b) => new Date(b.published) - new Date(a.published));
         setVideos(nextVideos);
-        setSelectedVideo((current) => current && nextVideos.some((video) => video.id === current.id) ? current : nextVideos[0] || null);
-        setStatus(feeds.some((feed) => feed.fromCache) ? 'Ready using cached feeds for one or more channels.' : 'Ready');
+        setSelectedVideo((current) => current && (nextVideos.some((video) => video.id === current.id) || settings.approvedVideos.includes(current.id)) ? current : null);
+        if (failures.length > 0) {
+          const message = `${failures.length} approved channel feed${failures.length === 1 ? '' : 's'} could not be loaded.`;
+          setVideoLoadError(message);
+          setStatus(message);
+        } else {
+          setStatus(feeds.some((feed) => feed.fromCache) ? 'Ready using cached feeds for one or more channels.' : 'Ready');
+        }
       } catch (error) {
         if (!cancelled) {
           setVideoLoadError(error.message);
@@ -100,36 +127,65 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [settings.approvedChannels]);
+  }, [feedChannelKey]);
 
   const currentViewingStatus = viewingStatus(settings);
 
   useEffect(() => {
-    if (!selectedVideo || currentViewingStatus.blocked || !settings.viewingLimits.enabled) return undefined;
+    const enabledIds = new Set(settings.approvedChannels.filter((channel) => channel.enabled !== false).map((channel) => channel.id));
+    const allowed = canPlayVideo(selectedVideo, enabledIds, new Set(settings.approvedVideos), new Set(settings.hiddenVideos));
+    if (mode !== 'watch' || !allowed || currentViewingStatus.blocked || !settings.viewingLimits.enabled) return undefined;
     const interval = window.setInterval(() => {
       const key = todayKey();
-      setSettings((currentSettings) => {
-        const nextSettings = {
+      updateSettings((currentSettings) => ({
           ...currentSettings,
           usageByDate: {
             ...currentSettings.usageByDate,
             [key]: (currentSettings.usageByDate[key] || 0) + 1,
           },
-        };
-        window.appApi.writeSettings(nextSettings).catch((error) => setStatus(error.message));
-        return nextSettings;
-      });
+      }));
     }, 60000);
     return () => window.clearInterval(interval);
-  }, [selectedVideo, currentViewingStatus.blocked, settings.viewingLimits.enabled]);
+  }, [mode, selectedVideo, currentViewingStatus.blocked, settings.viewingLimits.enabled, feedChannelKey, approvedVideoKey, hiddenVideoKey]);
 
-  async function saveSettings(nextSettings) {
-    const saved = await window.appApi.writeSettings(nextSettings);
-    setSettings(saved);
-    return saved;
+  function replaceSettings(nextSettings) {
+    settingsRevisionRef.current += 1;
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+  }
+
+  function updateSettings(updater) {
+    const nextSettings = updater(settingsRef.current);
+    const revision = settingsRevisionRef.current + 1;
+    settingsRevisionRef.current = revision;
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    const operation = settingsWriteQueueRef.current.then(async () => {
+      const saved = await window.appApi.writeSettings(nextSettings);
+      if (settingsRevisionRef.current === revision) {
+        settingsRef.current = saved;
+        setSettings(saved);
+      }
+      return saved;
+    });
+    const safeOperation = operation.catch((error) => {
+      setStatus(error.message);
+      return settingsRef.current;
+    });
+    settingsWriteQueueRef.current = safeOperation;
+    return safeOperation;
+  }
+
+  function saveSettings(nextSettings) {
+    const changedEntries = Object.entries(nextSettings).filter(([key, value]) => settings[key] !== value);
+    return updateSettings((current) => ({ ...current, ...Object.fromEntries(changedEntries) }));
   }
 
   function openAdmin() {
+    if (!settingsLoaded) {
+      setStatus('Settings are still loading.');
+      return;
+    }
     const nextMode = modeForAdminOpen(settings, adminUnlocked);
     if (nextMode === 'unlock') setPinInput('');
     setMode(nextMode);
@@ -150,8 +206,9 @@ function App() {
 
   async function setParentPin() {
     try {
+      await settingsWriteQueueRef.current;
       const saved = await window.appApi.setPin(newPinInput);
-      setSettings(saved);
+      replaceSettings(saved);
       setAdminUnlocked(true);
       setNewPinInput('');
       setStatus('Parent PIN saved.');
@@ -169,8 +226,8 @@ function App() {
 
   async function resolveChannelForApproval(channel) {
     let id = normalizeChannelId(channel.id);
-    let title = channel.title?.trim() || channelTitleInput.trim() || id;
-    if (!id.startsWith('UC')) {
+    let title = channel.title?.trim() || id;
+    if (!isValidChannelId(id)) {
       setStatus('Resolving channel handle...');
       const resolved = await window.appApi.resolveChannel({ input: channel.id, apiKey: settings.youtubeApiKey });
       if (resolved.needsApiKey) {
@@ -180,8 +237,9 @@ function App() {
         throw new Error('Could not find that channel. Try pasting the channel ID or exact @handle.');
       }
       id = resolved.id;
-      title = channel.title?.trim() || channelTitleInput.trim() || resolved.title || id;
+      title = channel.title?.trim() || resolved.title || id;
     }
+    if (!isValidChannelId(id)) throw new Error('YouTube returned an invalid channel ID.');
     return { id, title };
   }
 
@@ -354,6 +412,7 @@ function App() {
 
   async function exportSettings() {
     try {
+      await settingsWriteQueueRef.current;
       const result = await window.appApi.exportSettings();
       if (!result.canceled) setStatus(`Settings exported to ${result.filePath}`);
     } catch (error) {
@@ -363,9 +422,12 @@ function App() {
 
   async function importSettings() {
     try {
+      await settingsWriteQueueRef.current;
       const result = await window.appApi.importSettings();
       if (result.canceled) return;
-      setSettings(result.settings);
+      replaceSettings(result.settings);
+      setSelectedCategory('All');
+      setSelectedChannelId('All');
       setDiscoverResults([]);
       setReviewChannel(null);
       setReviewVideos([]);
@@ -390,8 +452,11 @@ function App() {
 
   async function restoreBackup(fileName) {
     try {
+      await settingsWriteQueueRef.current;
       const result = await window.appApi.restoreBackup(fileName);
-      setSettings(result.settings);
+      replaceSettings(result.settings);
+      setSelectedCategory('All');
+      setSelectedChannelId('All');
       setDiscoverResults([]);
       setReviewChannel(null);
       setReviewVideos([]);
@@ -537,20 +602,32 @@ function App() {
   }
 
   async function reviewCandidate(channel) {
+    const requestId = reviewRequestRef.current + 1;
+    reviewRequestRef.current = requestId;
     setReviewChannel(channel);
     setReviewVideos([]);
     setReviewLoading(true);
     setStatus(`Loading recent uploads for ${channel.title}...`);
     try {
       const recentVideos = await window.appApi.fetchChannelVideos(channel.id);
+      if (reviewRequestRef.current !== requestId) return;
       setReviewVideos(recentVideos);
       setStatus(`Reviewing ${channel.title}.`);
     } catch (error) {
+      if (reviewRequestRef.current !== requestId) return;
       setStatus(error.message);
     } finally {
-      setReviewLoading(false);
+      if (reviewRequestRef.current === requestId) setReviewLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (selectedChannelId !== 'All' && !settings.approvedChannels.some((channel) => channel.id === selectedChannelId && channel.enabled !== false)) {
+      setSelectedChannelId('All');
+    }
+    if (selectedCategory !== 'All' && !settings.categories.includes(selectedCategory)) setSelectedCategory('All');
+    if (!settings.categories.includes(videoCategoryInput)) setVideoCategoryInput(settings.categories[0] || 'Learning');
+  }, [settings.approvedChannels, settings.categories, selectedChannelId, selectedCategory, videoCategoryInput]);
 
   const approvedIds = new Set(settings.approvedChannels.map((channel) => channel.id));
   const enabledChannels = settings.approvedChannels.filter((channel) => channel.enabled !== false);
@@ -572,8 +649,21 @@ function App() {
     standaloneApproved: true,
   }));
   const feedVideoIds = new Set(videos.map((video) => video.id));
-  const allVideos = [...videos, ...approvedStandaloneVideos.filter((video) => !feedVideoIds.has(video.id))];
-  const visibleVideos = allVideos.filter((video) => !hiddenVideoIds.has(video.id));
+  const savedVideoSnapshots = [
+    ...Object.values(settings.favoriteVideoDetails),
+    ...settings.recentlyWatched,
+  ].filter((video) => video?.id);
+  const knownVideoIds = new Set([...feedVideoIds, ...approvedStandaloneVideos.map((video) => video.id)]);
+  const allVideos = [
+    ...videos,
+    ...approvedStandaloneVideos.filter((video) => !feedVideoIds.has(video.id)),
+    ...savedVideoSnapshots.filter((video) => {
+      if (knownVideoIds.has(video.id)) return false;
+      knownVideoIds.add(video.id);
+      return true;
+    }),
+  ];
+  const visibleVideos = allVideos.filter((video) => canPlayVideo(video, enabledApprovedIds, approvedVideoIds, hiddenVideoIds));
   const canPlaySelectedVideo = canPlayVideo(selectedVideo, enabledApprovedIds, approvedVideoIds, hiddenVideoIds);
   const playableVideo = canPlaySelectedVideo && !hiddenVideoIds.has(selectedVideo.id) && !currentViewingStatus.blocked ? selectedVideo : null;
   const categoryByChannelId = new Map(settings.approvedChannels.map((channel) => [channel.id, channel.category || 'Learning']));
@@ -604,7 +694,7 @@ function App() {
         </div>
         <nav className="mode-switcher" aria-label="App mode">
           <button className={mode === 'watch' ? 'active' : ''} onClick={() => setMode('watch')}>Watch</button>
-          <button className={mode === 'admin' || mode === 'unlock' ? 'active' : ''} onClick={openAdmin}>Parent Admin</button>
+          <button className={mode === 'admin' || mode === 'unlock' ? 'active' : ''} disabled={!settingsLoaded} onClick={openAdmin}>Parent Admin</button>
           {adminUnlocked && <button onClick={lockAdmin}>Lock Admin</button>}
         </nav>
         <section className="approved-box">
@@ -627,7 +717,7 @@ function App() {
             {playableVideo ? (
               <iframe
                 title={playableVideo.title}
-                src={`https://www.youtube-nocookie.com/embed/${playableVideo.id}?rel=0&modestbranding=1`}
+                src={`https://www.youtube-nocookie.com/embed/${playableVideo.id}?rel=0&modestbranding=1${playableVideo.standaloneApproved ? `&loop=1&playlist=${playableVideo.id}` : ''}`}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
               />
@@ -695,7 +785,7 @@ function App() {
           <div className="video-grid">
             {loadingVideos ? (
               <div className="empty-list state-card">Loading approved channel videos...</div>
-            ) : videoLoadError ? (
+            ) : videoLoadError && filteredVideos.length === 0 ? (
               <div className="empty-list state-card error-state">Could not refresh approved channel videos: {videoLoadError}</div>
             ) : filteredVideos.length === 0 ? (
               <div className="empty-list">No videos match this filter yet.</div>

@@ -16,12 +16,12 @@ if (!fs.existsSync(electronBinary)) {
   try {
     execFileSync(process.execPath, [electronInstallScript], { stdio: 'inherit' });
   } catch (error) {
-    console.error('Electron runtime download failed. Try `npx install-electron` or remove `node_modules` and run `npm install` again.');
+    console.error('Electron runtime download failed. Try `npm run electron:install` or remove `node_modules` and run `npm install` again.');
     console.error(error.message);
     process.exit(1);
   }
   if (!fs.existsSync(electronBinary)) {
-    console.error('Electron runtime is still missing after download. Try `npx install-electron`.');
+    console.error('Electron runtime is still missing after download. Try `npm run electron:install`.');
     process.exit(1);
   }
 }
